@@ -1,0 +1,4 @@
+.DS_Store
+build/
+build-teg-workshop-Desktop-Debug/
+*.user
