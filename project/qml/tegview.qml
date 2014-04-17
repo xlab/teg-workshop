@@ -1,49 +1,73 @@
 import QtQuick 2.0
 import QtQuick.Controls 1.1
+import QtQuick.Layouts 1.1
+import TegView 1.0
 import 'tegrender.js' as Renderer
 
-Rectangle {
+ApplicationWindow {
+    id: view
     width: 700
     height: 600
     color: "#ecf0f1"
+    property alias ctrl: ctrl
+    property alias editMode: editbtn.checked
+    property alias viewMode: viewbtn.checked
 
-    Button {
-        id: btn0
-        z: 10
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        text: "+"
-        onClicked: cv.zoom += 0.2
-    }
+    toolBar: ToolBar {
+        RowLayout {
+            ToolButton {
+                text: "+"
+                onClicked: cv.zoom += 0.2
+            }
+            ToolButton {
+                text: "-"
+                onClicked: cv.zoom -= 0.2
+            }
+            ToolButton {
+                text: "Rand"
+                onClicked: {
+                    for(var p in model.places) {
+                        model.places[p].counter = rand(0,12)
+                        model.places[p].timer = rand(0,12)
+                        cv.requestPaint()
+                    }
+                }
 
-    Button {
-        id: btn1
-        z: 10
-        anchors.leftMargin: 20
-        anchors.left: btn0.right
-        anchors.bottom: parent.bottom
-        text: "-"
-        onClicked: cv.zoom -= 0.2
-    }
-
-    Button {
-        id: btn2
-        z: 10
-        anchors.leftMargin: 20
-        anchors.left: btn1.right
-        anchors.bottom: parent.bottom
-        text: "R"
-        onClicked: {
-            for(var p in model.places) {
-                model.places[p].counter = rand(0,12)
-                model.places[p].timer = rand(0,12)
-                cv.requestPaint()
+                function rand(min, max) {
+                    return Math.floor(Math.random() * (max - min + 1)) + min;
+                }
+            }
+            Rectangle {
+                width: 3
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.margins: 2
+                color: "#34495e"
+            }
+            ExclusiveGroup { id: mode }
+            RadioButton {
+                id: viewbtn
+                exclusiveGroup: mode
+                checked: true
+                text: "View"
+            }
+            RadioButton {
+                id: editbtn
+                exclusiveGroup: mode
+                text: "Edit"
             }
         }
+    }
 
-        function rand(min, max) {
-            return Math.floor(Math.random() * (max - min + 1)) + min;
-        }
+    Ctrl {
+        id: ctrl
+        canvasWidth: cv.canvasSize.width
+        canvasHeight: cv.canvasSize.height
+        canvasWindowX: cv.canvasWindow.x
+        canvasWindowY: cv.canvasWindow.y
+        canvasWindowHeight: cv.canvasWindow.height
+        canvasWindowWidth: cv.canvasWindow.width
+        zoom: cv.zoom
     }
 
     Canvas {
@@ -69,6 +93,18 @@ Rectangle {
             cv.requestPaint()
         }
 
+        focus: true
+        Keys.onPressed: {
+            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
+            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
+            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+        }
+        Keys.onReleased: {
+            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
+            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
+            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+        }
+
         MouseArea {
             id: drag
             anchors.fill: parent
@@ -76,29 +112,40 @@ Rectangle {
             property int cy0
             property int x0
             property int y0
+
             onPressed: {
-                cx0 = cv.canvasWindow.x
-                cy0 = cv.canvasWindow.y
-                x0 = mouse.x
-                y0 = mouse.y
-            }
-            onMouseXChanged: {
-                if(x0 != mouseX) {
-                    cv.canvasWindow.x = cx0 + (x0 - mouseX)
-                    cv.requestPaint()
+                if(viewMode) {
+                    cx0 = cv.canvasWindow.x
+                    cy0 = cv.canvasWindow.y
+                    x0 = mouse.x
+                    y0 = mouse.y
+                } else if(editMode) {
+                    ctrl.mousePressed(mouse.x, mouse.y)
                 }
             }
-            onMouseYChanged: {
-                if(y0 != mouseY) {
-                    cv.canvasWindow.y = cy0 + (y0 - mouseY)
-                    cv.requestPaint()
+
+            onPositionChanged: {
+                if(x0 != mouse.x || y0 != mouse.y) {
+                    if (viewMode) {
+                        cv.canvasWindow.x = cx0 + (x0 - mouse.x)
+                        cv.canvasWindow.y = cy0 + (y0 - mouse.y)
+                        cv.requestPaint()
+                    } else if(editMode) {
+                        ctrl.mouseMoved(mouse.x, mouse.y)
+                    }
+                }
+            }
+
+            onReleased: {
+                if (editMode) {
+                    ctrl.mouseReleased(mouse.x, mouse.y)
                 }
             }
         }
 
         Timer {
             id: coldstart
-            interval: 10
+            interval: 1000
             onTriggered: cv.requestPaint()
             repeat: false
         }
@@ -106,35 +153,63 @@ Rectangle {
 
     Item {
         id: model
-        property var places: {
-            "id_1": {"control":{"x":0-100, "y":0-100}, "place": true, "x": 0, "y": 0, "selected": true, "counter": 2, "timer": 3},
-            "id_2": {"place": true, "x": 60, "y": 60, "selected": true, "counter": 2, "timer": 3},
-            "id_3": {"place": true, "x": 120, "y": 120, "selected": false, "counter": 2, "timer": 3},
-            "id_4": {"place": true, "x": 180, "y": 180, "selected": false, "counter": 2, "timer": 3},
-            "id_5": {"place": true, "x": 240, "y": 240, "selected": false, "counter": 2, "timer": 3},
-            "id_6": {"place": true, "x": 300, "y": 300, "selected": true, "counter": 2, "timer": 3},
-            "id_7": {"place": true, "x": 360, "y": 360, "selected": false, "counter": 2, "timer": 3},
-            "id_8": {"place": true, "x": 0+100, "y": 0, "selected": true, "counter": 2, "timer": 3},
-            "id_9": {"place": true, "x": 60+100, "y": 60, "selected": true, "counter": 2, "timer": 3},
-            "id_10": {"place": true, "x": 120+100, "y": 120, "selected": false, "counter": 2, "timer": 3},
-            "id_11": {"place": true, "x": 180+100, "y": 180, "selected": false, "counter": 2, "timer": 3},
-            "id_12": {"place": true, "x": 240+100, "y": 240, "selected": false, "counter": 2, "timer": 3},
-            "id_13": {"place": true, "x": 300+100, "y": 300, "selected": true, "counter": 2, "timer": 3},
-            "id_14": {"place": true, "x": 360+100, "y": 360, "selected": false, "counter": 2, "timer": 3,
-                "label": "Rearrangulate\nexterior #1"},
+        property var updated: tegModel.updated
+        property var placeSpecs: tegModel.placeSpecs
+        property var transitionSpecs: tegModel.transitionSpecs
+        property var arcSpecs: tegModel.arcSpecs
+        property var places: []
+        property var transitions: []
+        property var arcs: []
+
+        onUpdatedChanged: {
+            cv.requestPaint()
         }
-        property var transitions: {
-            "id_1": {"transition": true, "x": 0-200, "y": 0, "selected": true},
-            "id_2": {"transition": true, "x": 60-200, "y": 60, "selected": true},
-            "id_3": {"control":{"x":120-200+100, "y":120+100}, "out": 3, "transition": true, "x": 120-200, "y": 120, "selected": false},
-            "id_4": {"transition": true, "x": 180-200, "y": 180, "selected": false},
-            "id_5": {"transition": true, "x": 240-200, "y": 240, "selected": false},
-            "id_6": {"transition": true, "x": 300-200, "y": 300, "selected": true, "counter": 2,  "label": "Rearrangulate\nexterior #1"},
-            "id_7": {"transition": true, "x": 360-200, "y": 360, "selected": false, "counter": 2, "label": "Rearrangulate\nexterior #2", "horizontal": true},
+
+        function preparePlaceSpec(spec) {
+            return {
+                "x": spec.x, "y": spec.y,
+                "place": true, "selected": spec.selected,
+                "counter": spec.counter, "timer": spec.timer,
+                "control": {"x": spec.control.x, "y": spec.control.y},
+                "label": spec.label
+            }
         }
-        property var arcs: {
-            "id_1": { "start": {"type":"place", "id":"id_1"},
-                "end": {"type":"transition", "id":"id_3"}, "index": 1 },
+
+        function prepareTransitionSpec(spec) {
+            return {
+                "x": spec.x, "y": spec.y, "in": spec.in, "out": spec.out,
+                "transition": true, "selected": spec.selected, "horizontal": spec.horizontal,
+                //"control": {"x": spec.control.x, "y": spec.control.y},
+                "label": spec.label
+            }
+        }
+
+        onPlaceSpecsChanged: {
+            // console.log("Generating new places hashmap, count=" + placeSpecs.length)
+            for(var i = 0; i < placeSpecs.length; ++i){
+                var spec = placeSpecs.value(i)
+                places[i] = preparePlaceSpec(spec)
+            }
+        }
+
+        onTransitionSpecsChanged: {
+            // console.log("Generating new transitions hashmap, count=" + transitionSpecs.length)
+            for(var i = 0; i < transitionSpecs.length; ++i){
+                var spec = transitionSpecs.value(i)
+                transitions[i] = prepareTransitionSpec(spec)
+            }
+        }
+
+        onArcSpecsChanged: {
+            // console.log("Generating new arcs hashmap, count=" + arcSpecs.length)
+            for(var i = 0; i < arcSpecs.length; ++i){
+                var a = arcSpecs.value(i)
+                arcs[i] = {
+                    "place": preparePlaceSpec(a.place), "transition": prepareTransitionSpec(a.transition),
+                    "control": a.place.control, "index": a.index, "inbound": a.inbound,
+                }
+            }
         }
     }
 }
+
