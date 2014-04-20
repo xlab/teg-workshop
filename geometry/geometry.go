@@ -30,6 +30,12 @@ func (r *Rect) Y() float64 {
 	return r.corner[1]
 }
 
+func (r *Rect) Rotate(horizontal bool) {
+	r.corner[0] -= (r.h - r.w) / 2
+	r.corner[1] += (r.h - r.w) / 2
+	r.w, r.h = r.h, r.w
+}
+
 func (c *Circle) X() float64 {
 	return c.center[0] - c.r
 }
@@ -49,14 +55,29 @@ func (p *Point) Move(x, y float64) {
 	p[0], p[1] = x, y
 }
 
+func (p *Point) Shift(dx, dy float64) {
+	p[0] += dx
+	p[1] += dy
+}
+
 func (r *Rect) Move(x, y float64) {
 	r.corner[0] = x
 	r.corner[1] = y
 }
 
+func (r *Rect) Shift(dx, dy float64) {
+	r.corner[0] += dx
+	r.corner[1] += dy
+}
+
 func (c *Circle) Move(x, y float64) {
 	c.center[0] = x
 	c.center[1] = y
+}
+
+func (c *Circle) Shift(dx, dy float64) {
+	c.center[0] += dx
+	c.center[1] += dy
 }
 
 func (c *Circle) Resize(w, h float64) {

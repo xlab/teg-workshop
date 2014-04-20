@@ -29,7 +29,6 @@ func NewView(engine *qml.Engine) *View {
 	win := component.CreateWindow(nil)
 	control := win.Root().Property("ctrl").(*Ctrl)
 	control.model = model
-	model.fakeData()
 
 	view := &View{
 		engine:  engine,
@@ -51,7 +50,8 @@ type Test struct {
 }
 
 func (v *View) Show() (closed chan struct{}) {
-	v.model.handleUpdates()
+	v.model.fakeData()
+	v.model.updated()
 	v.control.handleEvents()
 	v.win.Show()
 	/*

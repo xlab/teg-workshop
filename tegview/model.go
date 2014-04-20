@@ -1,8 +1,6 @@
 package tegview
 
 import (
-	"log"
-
 	"github.com/xlab/teg-workshop/geometry"
 	"gopkg.in/qml.v0"
 )
@@ -18,30 +16,39 @@ const (
 type item interface {
 	X() float64
 	Y() float64
+	Center() *geometry.Point
 	Width() float64
 	Height() float64
 	Has(x, y float64) bool
 	Move(x, y float64)
+	Shift(dx, dy float64)
 	Resize(w, h float64)
+	SetLabel(s string)
 	Label() string
 }
 
 type controlPoint struct {
 	*geometry.Rect
+	modified bool
 }
 
 func (c *controlPoint) Label() (s string) {
 	return
 }
 
+func (c *controlPoint) SetLabel(s string) {
+	return
+}
+
 type place struct {
 	*geometry.Circle
-	in      *transition
-	out     *transition
-	counter int
-	timer   int
-	label   string
-	control *controlPoint
+	counter    int
+	timer      int
+	label      string
+	in         *transition
+	out        *transition
+	inControl  *controlPoint
+	outControl *controlPoint
 }
 
 type transition struct {
@@ -55,9 +62,6 @@ type transition struct {
 func NewPlace(x float64, y float64) *place {
 	return &place{
 		Circle: geometry.NewCircle(x, y, PlaceRadius),
-		control: &controlPoint{
-			geometry.NewRect(x+50.0, y+50.0, ControlPointWidth, ControlPointHeight),
-		},
 	}
 }
 
@@ -68,11 +72,53 @@ func NewTransition(x float64, y float64) *transition {
 }
 
 func (t *transition) Move(x, y float64) {
-	t.Rect.Move(x-TransitionWidth/2, y-t.Height()/2)
+	t.Rect.Move(x-t.Width()/2, y-t.Height()/2)
 }
 
 func (c *controlPoint) Move(x, y float64) {
 	c.Rect.Move(x-ControlPointWidth/2, y-ControlPointHeight/2)
+}
+
+func (t *transition) Rotate() {
+	t.horizontal = !t.horizontal
+	t.Rect.Rotate(t.horizontal)
+}
+
+func (t *transition) resetProperties() {
+	t.label = ""
+	if t.horizontal {
+		t.Rotate()
+	}
+}
+
+func (p *place) resetProperties() {
+	p.counter = 0
+	p.timer = 0
+	p.label = ""
+	if p.in != nil {
+		p.resetControlPoint(true)
+	}
+	if p.out != nil {
+		p.resetControlPoint(false)
+	}
+}
+
+func (p *place) resetControlPoint(inbound bool) {
+	if inbound {
+		tcenter := p.in.Center()
+		point := p.BorderPoint(tcenter[0], tcenter[1], 70.0)
+		p.inControl = &controlPoint{
+			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
+			false,
+		}
+	} else {
+		tcenter := p.out.Center()
+		point := p.BorderPoint(tcenter[0], tcenter[1], 50.0)
+		p.outControl = &controlPoint{
+			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
+			false,
+		}
+	}
 }
 
 func (p *place) Label() string {
@@ -81,6 +127,14 @@ func (p *place) Label() string {
 
 func (t *transition) Label() string {
 	return t.label
+}
+
+func (p *place) SetLabel(s string) {
+	p.label = s
+}
+
+func (t *transition) SetLabel(s string) {
+	t.label = s
 }
 
 type List struct {
@@ -107,16 +161,10 @@ type TegModel struct {
 	places      []*place
 	transitions []*transition
 	selected    map[item]bool
-	updateChan  chan *updateRequest
 
-	Updated         bool // fake trigger
-	PlaceSpecs      *List
-	TransitionSpecs *List
-	ArcSpecs        *List
-}
-
-type updateRequest struct {
-	places, transitions, arcs bool
+	PlacesLen      int
+	TransitionsLen int
+	Updated        bool // fake trigger
 }
 
 type ControlPointSpec struct {
@@ -124,12 +172,13 @@ type ControlPointSpec struct {
 }
 
 type PlaceSpec struct {
-	X, Y     float64
-	Selected bool
-	Counter  int
-	Timer    int
-	Label    string
-	Control  *ControlPointSpec
+	X, Y       float64
+	Selected   bool
+	Counter    int
+	Timer      int
+	Label      string
+	InControl  *ControlPointSpec
+	OutControl *ControlPointSpec
 }
 
 type TransitionSpec struct {
@@ -138,97 +187,69 @@ type TransitionSpec struct {
 	Selected   bool
 	Horizontal bool
 	In, Out    int
+	ArcSpecs   *List
 }
 
 type ArcSpec struct {
-	Transition *TransitionSpec
-	Place      *PlaceSpec
-	Index      int
-	Inbound    bool
-}
-
-func (t *TegModel) handleUpdates() {
-	go func() {
-		for {
-			update := <-t.updateChan
-			if update.places {
-				t.updatePlaceSpecs()
-				qml.Changed(t, &t.PlaceSpecs)
-			}
-			if update.transitions {
-				t.updateTransitionSpecs()
-				qml.Changed(t, &t.TransitionSpecs)
-			}
-			if update.arcs {
-				t.updateArcSpecs()
-				qml.Changed(t, &t.ArcSpecs)
-			}
-			if update.places || update.transitions || update.arcs {
-				t.updated()
-			}
-		}
-	}()
-}
-
-func (t *TegModel) queueUpdate(places, transitions, arcs bool) {
-	t.updateChan <- &updateRequest{places, transitions, arcs}
+	Place   *PlaceSpec
+	Index   int
+	Inbound bool
 }
 
 func (t *TegModel) updated() {
 	qml.Changed(t, &t.Updated)
 }
 
-func (t *TegModel) updatePlaceSpecs() {
-	specs := make([]interface{}, len(t.places))
-	for k, v := range t.places {
-		specs[k] = t.newPlaceSpec(v)
-	}
-	t.PlaceSpecs = NewList(specs)
+func (tm *TegModel) GetPlaceSpec(i int) *PlaceSpec {
+	return tm.newPlaceSpec(tm.places[i])
 }
 
-func (t *TegModel) updateTransitionSpecs() {
-	specs := make([]interface{}, len(t.transitions))
-	for k, v := range t.transitions {
-		specs[k] = t.newTransitionSpec(v)
-	}
-	t.TransitionSpecs = NewList(specs)
+func (tm *TegModel) GetTransitionSpec(i int) *TransitionSpec {
+	return tm.newTransitionSpec(tm.transitions[i])
 }
 
 func (tm *TegModel) newPlaceSpec(p *place) *PlaceSpec {
-	return &PlaceSpec{
+	spec := &PlaceSpec{
 		X: p.X(), Y: p.Y(), Selected: tm.isSelected(p),
 		Counter: p.counter, Timer: p.timer, Label: p.Label(),
-		Control: &ControlPointSpec{X: p.control.X(), Y: p.control.Y()},
 	}
+	if p.in != nil {
+		spec.InControl = &ControlPointSpec{
+			X: p.inControl.X(),
+			Y: p.inControl.Y(),
+		}
+	}
+	if p.out != nil {
+		spec.OutControl = &ControlPointSpec{
+			X: p.outControl.X(),
+			Y: p.outControl.Y(),
+		}
+	}
+	return spec
 }
 
 func (tm *TegModel) newTransitionSpec(t *transition) *TransitionSpec {
-	return &TransitionSpec{
+	spec := &TransitionSpec{
 		X: t.X(), Y: t.Y(), Selected: tm.isSelected(t),
 		In: len(t.in), Out: len(t.out), Label: t.Label(),
 		Horizontal: t.horizontal,
 	}
-}
 
-func (t *TegModel) updateArcSpecs() {
-	specs := make([]interface{}, 0, len(t.places)*2)
-	for _, v := range t.transitions {
-		for i, p := range v.in {
-			specs = append(specs, &ArcSpec{
-				Transition: t.newTransitionSpec(v),
-				Place:      t.newPlaceSpec(p),
-				Inbound:    true, Index: i,
-			})
-		}
-		for i, p := range v.out {
-			specs = append(specs, &ArcSpec{
-				Transition: t.newTransitionSpec(v),
-				Place:      t.newPlaceSpec(p),
-				Inbound:    false, Index: i,
-			})
-		}
+	list := make([]interface{}, 0, spec.Out+spec.In)
+	for i, p := range t.in {
+		list = append(list, &ArcSpec{
+			Place:   tm.newPlaceSpec(p),
+			Inbound: true, Index: i,
+		})
 	}
-	t.ArcSpecs = NewList(specs)
+	for i, p := range t.out {
+		list = append(list, &ArcSpec{
+			Place:   tm.newPlaceSpec(p),
+			Inbound: false, Index: i,
+		})
+	}
+	spec.ArcSpecs = NewList(list)
+	return spec
 }
 
 func (t *TegModel) fakeData() {
@@ -236,97 +257,34 @@ func (t *TegModel) fakeData() {
 		NewPlace(0, 0),
 		NewPlace(0, 120),
 		NewPlace(0, 180),
-		NewPlace(0, 240),
-		NewPlace(0, 300),
-		NewPlace(0, 360),
-		NewPlace(0, 420),
-		NewPlace(0, 480),
-		NewPlace(0, 540),
-		NewPlace(0, 600),
-		NewPlace(0, 660),
 	}
-	t.transitions = []*transition{NewTransition(0-200, 0), NewTransition(0-200, 120)}
+
+	t.transitions = []*transition{
+		NewTransition(0-200, 0),
+		NewTransition(0-200, 120),
+	}
+	t.PlacesLen = len(t.places)
+	t.TransitionsLen = len(t.transitions)
+
 	t.connectItems(t.transitions[1], t.places[0], true)
-	t.connectItems(t.transitions[1], t.places[1], false)
-	t.connectItems(t.transitions[1], t.places[2], true)
-	t.connectItems(t.transitions[1], t.places[3], false)
-	t.connectItems(t.transitions[1], t.places[4], true)
-	t.connectItems(t.transitions[1], t.places[5], false)
-	t.connectItems(t.transitions[1], t.places[6], true)
-	t.connectItems(t.transitions[1], t.places[7], false)
-	t.connectItems(t.transitions[1], t.places[8], true)
-	t.connectItems(t.transitions[1], t.places[9], false)
-	t.connectItems(t.transitions[1], t.places[10], true)
-}
-
-func (t *TegModel) unfocusItem() {
-	t.focus = nil
-}
-
-func (t *TegModel) focusItemAt(x float64, y float64, additive bool) {
-	it, ok := t.findDrawable(x, y)
-
-	if !ok && !additive {
-		t.deselectAll()
-	} else if ok {
-		if _, ok := it.(*controlPoint); ok {
-			t.focus = it
-		} else {
-			t.focus = it
-			if !additive {
-				t.deselectAll()
-			}
-			t.selectItem(it)
-		}
-	}
-
-	if ok {
-		log.Printf("Focused item at (%f,%f): %v", x, y, it)
-	}
-}
-
-func (t *TegModel) moveFocusedItem(x, y float64) {
-	if t.focus != nil {
-		t.focus.Move(x, y)
-		if place, ok := t.focus.(*place); ok {
-			if place.in != nil {
-				transition := place.in
-				point := place.BorderPoint(transition.X(), transition.Y(), 50.0)
-				place.control.Move(point.X(), point.Y())
-			} else {
-				place.control.Move(x-50.0, y+50.0)
-			}
-		}
-		t.queueUpdateByItem(t.focus)
-	}
-}
-
-func (t *TegModel) changeTimerOfFocusedItem(delta int) {
-	p, _ := t.focus.(*place) // panic is ok
-	p.timer += delta
-}
-
-func (t *TegModel) changeCounterOfFocusedItem(delta int) {
-	p, _ := t.focus.(*place) // panic is ok
-	p.counter += delta
-}
-
-func (t *TegModel) queueUpdateByItem(it item) {
-	var places, transitions bool
-	switch it.(type) {
-	case *place:
-		places = true
-	case *transition:
-		transitions = true
-	}
-	t.queueUpdate(places, transitions, true)
+	t.connectItems(t.transitions[1], t.places[0], false)
+	t.connectItems(t.transitions[1], t.places[1], true)
 }
 
 func (t *TegModel) deselectAll() {
 	for k := range t.selected {
 		delete(t.selected, k)
 	}
-	t.queueUpdate(true, true, true)
+}
+
+func (t *TegModel) deselectItem(it item) {
+	delete(t.selected, it)
+}
+
+func (t *TegModel) selectItem(it item) {
+	if it != nil {
+		t.selected[it] = true
+	}
 }
 
 func (t *TegModel) focusedIsPlace() bool {
@@ -342,13 +300,6 @@ func (t *TegModel) focusedIsTransition() bool {
 func (t *TegModel) isSelected(it item) bool {
 	_, ok := t.selected[it]
 	return ok
-}
-
-func (t *TegModel) selectItem(it item) {
-	if it != nil {
-		t.selected[it] = true
-		t.queueUpdateByItem(it)
-	}
 }
 
 func (tm *TegModel) areConnected(t *transition, p *place, inbound bool) bool {
@@ -370,7 +321,7 @@ func (tm *TegModel) connectItems(t *transition, p *place, inbound bool) {
 		p.in = t
 		t.out = append(t.out, p)
 	}
-	tm.queueUpdate(true, true, true)
+	p.resetControlPoint(!inbound)
 }
 
 func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
@@ -378,8 +329,12 @@ func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
 		switch {
 		case it.Has(x, y):
 			return item(it), true
-		case t.isSelected(it) && it.control.Has(x, y):
-			return item(it.control), true
+		case t.isSelected(it):
+			if it.in != nil && it.inControl.Has(x, y) {
+				return item(it.inControl), true
+			} else if it.out != nil && it.outControl.Has(x, y) {
+				return item(it.outControl), true
+			}
 		}
 	}
 	for _, it := range t.transitions {
@@ -396,11 +351,9 @@ func NewModel() *TegModel {
 		places:      make([]*place, 0, 256),
 		transitions: make([]*transition, 0, 256),
 		selected:    make(map[item]bool, 256),
-		updateChan:  make(chan *updateRequest, 1024),
 
-		Updated:         false,
-		PlaceSpecs:      &List{},
-		TransitionSpecs: &List{},
-		ArcSpecs:        &List{},
+		PlacesLen:      0,
+		TransitionsLen: 0,
+		Updated:        false,
 	}
 }

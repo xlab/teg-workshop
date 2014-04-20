@@ -8,7 +8,7 @@ function render(cv, region, zoom, model) {
     var w = region.width
     var h = region.height
     var ctx = cv.getContext("2d")
-
+    
     ctx.clearRect(x0, y0, w, h)
 
     for(var idx in model.places) {
@@ -18,7 +18,7 @@ function render(cv, region, zoom, model) {
     for(var idx in model.transitions) {
         renderTransition(ctx, zoom, model.transitions[idx])
     }
-    
+
     for(var idx in model.arcs) {
         renderArc(ctx, zoom, model.arcs[idx])
     }
@@ -29,17 +29,23 @@ function renderArc(ctx, zoom, arc) {
     var place = arc.place
     var index = arc.index
     var inbound = arc.inbound
-    var control = arc.control
+    var control
 
+    if(inbound) {
+        control = place.out_control
+    } else {
+        control = place.in_control
+    }
+    
     var xy_p = absCoord(ctx, place.x*zoom, place.y*zoom)
     var xy_t = absCoord(ctx, transition.x*zoom, transition.y*zoom)
-    var xy_c = absCoord(ctx, place.control.x*zoom, place.control.y*zoom)
+    var xy_c = absCoord(ctx, control.x*zoom, control.y*zoom)
     var wh_p = calcDimensions(zoom, place)
     var wh_t = calcDimensions(zoom, transition)
     var wh_c = {"w":10*zoom, "h":10*zoom}
-
+    
     var thick = 2.0 * zoom
-
+    
     // collect variables to draw transition-end of bezier
     var data_t = {
         "x": xy_t.x, "y": xy_t.y,
@@ -47,17 +53,17 @@ function renderArc(ctx, zoom, arc) {
         "cx": xy_t.x + wh_t.w/2.0,
         "cy": xy_t.y + wh_t.h/2.0,
     }
-
+    
     var count = inbound ? transition.in : transition.out
     var horizontal = transition.horizontal
     // calc the point near transition
     var xyA_t = calcBorderPointTransition(zoom, data_t, xy_c.x, xy_c.y, horizontal, thick, inbound, count, index)
     // calc the point near place
     var xyA_p = calcBorderPointPlace(zoom, wh_p.w/2.0, xy_p.x+wh_p.w/2.0, xy_p.y+wh_p.h/2.0, xy_c.x, xy_c.y)
-
+    
     // get the points to draw
     var endXYA = inbound ? xyA_t : xyA_p
-
+    
     // nice ∆ pointer
     var p1X = endXYA.x_tip
     var p1Y = endXYA.y_tip
@@ -67,26 +73,34 @@ function renderArc(ctx, zoom, arc) {
     var p3Y = p1Y + (5 * 2/3 *thick)
     var p4X = p1X + 3*thick
     var p4Y = p1Y + 5*thick
-
+    
     // rotated ∆
     var p1 = calcRotatePoint(p1X, p1Y, p1X, p1Y, -endXYA.angle)
     var p2 = calcRotatePoint(p2X, p2Y, p1X, p1Y, -endXYA.angle)
     var p3 = calcRotatePoint(p3X, p3Y, p1X, p1Y, -endXYA.angle)
     var p4 = calcRotatePoint(p4X, p4Y, p1X, p1Y, -endXYA.angle)
-
+    
     var cp_t
     if(inbound) {
-        cp_t = {"x": xyA_t.x - 30.0, "y": xyA_t.y}
+        if(horizontal) {
+            cp_t = {"x": xyA_t.x, "y": xyA_t.y - 50.0}
+        } else {
+            cp_t = {"x": xyA_t.x - 50.0, "y": xyA_t.y}
+        }
     } else {
-        cp_t = {"x": xyA_t.x + 30.0, "y": xyA_t.y}
+        if(horizontal) {
+            cp_t = {"x": xyA_t.x, "y": xyA_t.y + 50.0}
+        } else {
+            cp_t = {"x": xyA_t.x + 50.0, "y": xyA_t.y}
+        }
     }
-
+    
     drawPointedBezierCurve(ctx, zoom, thick, place.selected && transition.selected,
                            {"x0":xyA_p.x, "y0":xyA_p.y, "x1":xyA_t.x, "y1":xyA_t.y,
                                "cx0":xy_c.x + wh_c.w/2, "cy0":xy_c.y + wh_c.h/2,
                                "cx1":cp_t.x, "cy1":cp_t.y},
                            {"p1":p1, "p2":p2, "p3":p3, "p4":p4})
-
+    
     ctx.beginPath()
     if(place.selected) {
         ctx.fillStyle = sel_color
@@ -104,7 +118,7 @@ function calcRotatePoint(pX, pY, oX, oY, angle) {
 function drawPointedBezierCurve(ctx, zoom, thick, selected, b, p) {
     ctx.strokeStyle = selected ? sel_color : def_color
     ctx.fillStyle = ctx.strokeStyle
-
+    
     ctx.save()
     ctx.lineWidth = thick
     ctx.beginPath()
@@ -112,7 +126,7 @@ function drawPointedBezierCurve(ctx, zoom, thick, selected, b, p) {
     ctx.bezierCurveTo(b.cx0, b.cy0, b.cx1, b.cy1, b.x1, b.y1)
     ctx.stroke()
     ctx.restore()
-
+    
     ctx.beginPath()
     ctx.moveTo(p.p1[0], p.p1[1])
     ctx.lineTo(p.p2[0], p.p2[1])
@@ -131,19 +145,21 @@ function renderPlace(ctx, zoom, place) {
     var xy0 = absCoord(ctx, place.x*zoom, place.y*zoom)
     var x0 = xy0.x
     var y0 = xy0.y
-
+    
     // color of place
     ctx.strokeStyle = place.selected ? sel_color : def_color
     ctx.fillStyle = ctx.strokeStyle
-
+    
     // circle of w=2
     ctx.save()
+    //ctx.fillStyle = "#ecf0f1"
     ctx.lineWidth = 2.0 * zoom
     ctx.ellipse(x0, y0, w, h)
+    //ctx.fill()
     ctx.stroke()
     ctx.restore()
     ctx.beginPath()
-
+    
     var d = ctx.lineWidth
     renderPlaceValue(ctx, zoom, x0 + 2*d, y0 + 2*d, w - 4*d, h - 4*d,
                      place.counter, place.timer)
@@ -151,7 +167,7 @@ function renderPlace(ctx, zoom, place) {
         var labelSize = 14.0 * zoom
         renderText(ctx, labelSize, x0, y0 + h + labelSize, w, place.label)
     }
-
+    
     ctx.reset()
 }
 
@@ -165,20 +181,20 @@ function renderTransition(ctx, zoom, transition) {
         w = wh.h
         h = wh.w
     }
-
+    
     var xy0 = absCoord(ctx, transition.x*zoom, transition.y*zoom)
     var x0 = xy0.x
     var y0 = xy0.y
-
+    
     // color of transition
     ctx.strokeStyle = transition.selected ? sel_color : def_color
     ctx.fillStyle = ctx.strokeStyle
-
+    
     // rect w x h
     ctx.rect(x0, y0, w, h)
     ctx.fill()
     ctx.beginPath()
-
+    
     if(transition.label) {
         var labelSize = 14.0 * zoom
         if(transition.horizontal) {
@@ -187,19 +203,19 @@ function renderTransition(ctx, zoom, transition) {
             renderText(ctx, labelSize, x0, y0 + h + labelSize, w, transition.label)
         }
     }
-
+    
     ctx.reset()
 }
 
 function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
     var thick = 6.0 * zoom
-
+    
     if(timer < 1 && counter > 0 && counter <= 9) {
         // defaults
         var rows = 1
         var vspacing = calcSpacing(height, thick, rows)
         var vmargin = calcCenteringMargin(height, thick, rows)
-
+        
         switch(counter){
         case 3:
             rows = 2
@@ -257,15 +273,15 @@ function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
         default:
             renderDotRow(ctx, thick, x0, y0 + vmargin, width, counter)
         }
-    } else if (timer > 1 && timer <= 4 && counter <= 3) {
+    } else if (timer > 0 && timer <= 4 && counter <= 3) {
         var rows = 1
         var vmargin = calcCenteringMargin(height, 4*thick, rows)
-
+        
         if (counter > 1) {
             var hspacing = calcSpacing(width, thick / 2, timer+1)
             var hmargin = calcCenteringMargin(width, thick / 2, timer+1)
             var d = hmargin + hspacing
-
+            
             renderDotColumn(ctx, thick, x0 + hmargin, y0 + thick, height - 2*thick, counter)
             renderBarRow(ctx, thick, x0 + d, y0 + vmargin, width - d, timer)
         } else {
@@ -280,7 +296,7 @@ function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
         ctx.stroke()
         ctx.restore()
         ctx.beginPath()
-
+        
         var labelSize = 14.0 * zoom
         if(counter > 0 && counter <= 4) {
             var voffset = calcCenteringMargin(height / 2, thick, 1)
@@ -289,7 +305,7 @@ function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
             var voffset = calcCenteringMargin(height / 2, labelSize, 1)
             renderLabel(ctx, labelSize, x0, y1 - voffset - 2.0*zoom, width, "" + counter)
         }
-
+        
         if(timer > 0 && timer <= 4) {
             var voffset = calcCenteringMargin(height / 2, thick*2, 1)
             renderBarRow(ctx, thick/2, x0, y1 + voffset, width, timer)
@@ -298,8 +314,8 @@ function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
             renderLabel(ctx, labelSize, x0, y1 + voffset + labelSize - 1.8*zoom, width, "" + timer)
         }
     }
-
-    ctx.stroke() // not a bug! it's a style
+    
+    ctx.stroke() // not a bug
     ctx.fill()
     ctx.reset()
 }
@@ -334,57 +350,50 @@ function renderLabel(ctx, size, x0, y0, width, label) {
 
 function calcBorderPointPlace(zoom, radius, x_center, y_center, x_control, y_control) {
     var angle = Math.atan2(x_control - x_center, y_control - y_center)
-
+    
     var dX_tip = (radius + 3.0*zoom) * Math.sin(angle)
     var dY_tip = (radius + 3.0*zoom) * Math.cos(angle)
     var dX = (radius + 5.0*zoom) * Math.sin(angle)
     var dY = (radius + 5.0*zoom) * Math.cos(angle)
-
+    
     return { "x": x_center + dX, "y": y_center + dY, "angle": angle,
         "x_tip": x_center + dX_tip, "y_tip": y_center + dY_tip}
 }
 
 function calcBorderPointTransition(zoom, data, cx, cy, horizontal, thick, inbound, count, index) {
     var offset = 3 * zoom
-    var offset_h = 8 * zoom
     var offset_tip = 2 * zoom
-
+    
     var point
     if(horizontal && inbound) {
-        point = {
-            "x": data.x - data.h / 2 + data.w / 2,
-            "y": data.y + data.h / 2 - data.w - offset_h,
-        }
+        point = {"x": data.x, "y": data.y - offset}
     } else if(inbound) {
         point = {"x": data.x - offset, "y": data.y}
     } else if(horizontal) {
-        point = {
-            "x": data.x - data.h / 2 + data.w / 2,
-            "y": data.y + data.h / 2 + offset_h,
-        }
+        point = {"x": data.x, "y": data.y + data.w + offset}
     } else {
         point = {"x": data.x + data.w + offset, "y": data.y}
     }
-
+    
     var dX = 0
     var dY = 0
     var spacing = calcSpacing(data.h, thick, count)
     var margin = calcCenteringMargin(data.h, thick, count)
-
+    
     if(horizontal) {
         dX = margin + index*(thick + spacing)
     } else {
         dY = margin + index*(thick + spacing)
     }
-
+    
     var angle
     var finalX, finalX_tip
     var finalY, finalY_tip
-
+    
     if(horizontal) {
         finalX = point.x + dX
         finalY = point.y
-
+        
         if (inbound) {
             angle = Math.PI
             finalX_tip = point.x + dX
@@ -407,7 +416,7 @@ function calcBorderPointTransition(zoom, data, cx, cy, horizontal, thick, inboun
             finalY_tip = point.y + dY
         }
     }
-
+    
     return { "x":finalX, "y":finalY, "angle":angle, "x_tip": finalX_tip, "y_tip": finalY_tip }
 }
 

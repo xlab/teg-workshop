@@ -70,6 +70,74 @@ ApplicationWindow {
         zoom: cv.zoom
     }
 
+    RowLayout {
+        id: keyHintRow
+        z: 2
+        property string fontColor: "#34495e"
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 10
+        anchors.bottomMargin: 10
+        spacing: 10
+        Text {
+            id: ctrlIndicator
+            text: "Ctrl"
+            font.capitalization: Font.SmallCaps
+            font.pixelSize: 16
+            color: keyHintRow.fontColor
+            visible: ctrl.modifierKeyControl
+        }
+
+        Text {
+            id: altIndicator
+            text: (ctrlIndicator.visible ? "+ ": "") + "Alt"
+            font.capitalization: Font.SmallCaps
+            font.pixelSize: 16
+            color: keyHintRow.fontColor
+            visible: ctrl.modifierKeyAlt
+        }
+
+        Text {
+            id: shiftIndicator
+            text: ((ctrlIndicator.visible || altIndicator.visible)  ? "+ ": "") + "Shift"
+            font.pixelSize: 16
+            font.capitalization: Font.SmallCaps
+            color: keyHintRow.fontColor
+            visible: ctrl.modifierKeyShift
+        }
+
+        Text {
+            id: keyHint
+            font.pixelSize: 16
+            font.capitalization: Font.SmallCaps
+            color: keyHintRow.fontColor
+            visible: false
+
+            function setText(text) {
+                if(text.length > 0) {
+                    this.visible = true
+                    this.text = ((ctrlIndicator.visible || altIndicator.visible || shiftIndicator.visible)  ? "+ ": "")
+                    this.text += text
+                } else {
+                    this.visible = false
+                    this.text = ""
+                }
+            }
+        }
+    }
+
+    Text {
+        id: modeHint
+        font.pixelSize: 20
+        font.capitalization: Font.AllUppercase
+        color: "#95a5a6"
+        text: editMode ? "Edit" : "View"
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.rightMargin: 15
+        anchors.topMargin: 15
+    }
+
     Canvas {
         id: cv
         property real zoom: 1.0
@@ -98,11 +166,20 @@ ApplicationWindow {
             ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+            ctrl.keyPressed(event.key, event.text)
+
+            if(ctrl.modifierKeyControl) {
+                keyHint.setText(event.text)
+            }
+            event.accepted = true
         }
         Keys.onReleased: {
             ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+
+            keyHint.setText("")
+            event.accepted = true
         }
 
         MouseArea {
@@ -141,6 +218,12 @@ ApplicationWindow {
                     ctrl.mouseReleased(mouse.x, mouse.y)
                 }
             }
+
+            onDoubleClicked: {
+                if (editMode) {
+                    ctrl.mouseDoubleClicked(mouse.x, mouse.y)
+                }
+            }
         }
 
         Timer {
@@ -154,14 +237,32 @@ ApplicationWindow {
     Item {
         id: model
         property var updated: tegModel.updated
-        property var placeSpecs: tegModel.placeSpecs
-        property var transitionSpecs: tegModel.transitionSpecs
-        property var arcSpecs: tegModel.arcSpecs
         property var places: []
         property var transitions: []
         property var arcs: []
 
         onUpdatedChanged: {
+            places = []
+            transitions = []
+            arcs = []
+
+            for(var i = 0; i < tegModel.placesLen; i++) {
+                places[i] = preparePlaceSpec(tegModel.getPlaceSpec(i))
+            }
+            for(var i = 0; i < tegModel.transitionsLen; i++) {
+                var spec = tegModel.getTransitionSpec(i)
+                var arcspecs = spec.arcSpecs
+                transitions[i] = prepareTransitionSpec(spec)
+
+                for(var j = 0; j < arcspecs.length; ++j){
+                    var a = arcspecs.value(j)
+                    arcs.push({
+                                  "place": preparePlaceSpec(a.place), "transition": transitions[i],
+                                  "index": a.index, "inbound": a.inbound,
+                              })
+                }
+            }
+
             cv.requestPaint()
         }
 
@@ -170,7 +271,8 @@ ApplicationWindow {
                 "x": spec.x, "y": spec.y,
                 "place": true, "selected": spec.selected,
                 "counter": spec.counter, "timer": spec.timer,
-                "control": {"x": spec.control.x, "y": spec.control.y},
+                "in_control": spec.inControl ? {"x": spec.inControl.x, "y": spec.inControl.y} : undefined,
+                "out_control": spec.outControl ? {"x": spec.outControl.x, "y": spec.outControl.y} : undefined,
                 "label": spec.label
             }
         }
@@ -179,35 +281,7 @@ ApplicationWindow {
             return {
                 "x": spec.x, "y": spec.y, "in": spec.in, "out": spec.out,
                 "transition": true, "selected": spec.selected, "horizontal": spec.horizontal,
-                //"control": {"x": spec.control.x, "y": spec.control.y},
                 "label": spec.label
-            }
-        }
-
-        onPlaceSpecsChanged: {
-            // console.log("Generating new places hashmap, count=" + placeSpecs.length)
-            for(var i = 0; i < placeSpecs.length; ++i){
-                var spec = placeSpecs.value(i)
-                places[i] = preparePlaceSpec(spec)
-            }
-        }
-
-        onTransitionSpecsChanged: {
-            // console.log("Generating new transitions hashmap, count=" + transitionSpecs.length)
-            for(var i = 0; i < transitionSpecs.length; ++i){
-                var spec = transitionSpecs.value(i)
-                transitions[i] = prepareTransitionSpec(spec)
-            }
-        }
-
-        onArcSpecsChanged: {
-            // console.log("Generating new arcs hashmap, count=" + arcSpecs.length)
-            for(var i = 0; i < arcSpecs.length; ++i){
-                var a = arcSpecs.value(i)
-                arcs[i] = {
-                    "place": preparePlaceSpec(a.place), "transition": prepareTransitionSpec(a.transition),
-                    "control": a.place.control, "index": a.index, "inbound": a.inbound,
-                }
             }
         }
     }
