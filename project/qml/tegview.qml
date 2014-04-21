@@ -83,7 +83,7 @@ ApplicationWindow {
             id: ctrlIndicator
             text: "Ctrl"
             font.capitalization: Font.SmallCaps
-            font.pixelSize: 16
+            font.pointSize: 16
             color: keyHintRow.fontColor
             visible: ctrl.modifierKeyControl
         }
@@ -92,7 +92,7 @@ ApplicationWindow {
             id: altIndicator
             text: (ctrlIndicator.visible ? "+ ": "") + "Alt"
             font.capitalization: Font.SmallCaps
-            font.pixelSize: 16
+            font.pointSize: 16
             color: keyHintRow.fontColor
             visible: ctrl.modifierKeyAlt
         }
@@ -100,7 +100,7 @@ ApplicationWindow {
         Text {
             id: shiftIndicator
             text: ((ctrlIndicator.visible || altIndicator.visible)  ? "+ ": "") + "Shift"
-            font.pixelSize: 16
+            font.pointSize: 16
             font.capitalization: Font.SmallCaps
             color: keyHintRow.fontColor
             visible: ctrl.modifierKeyShift
@@ -108,7 +108,7 @@ ApplicationWindow {
 
         Text {
             id: keyHint
-            font.pixelSize: 16
+            font.pointSize: 16
             font.capitalization: Font.SmallCaps
             color: keyHintRow.fontColor
             visible: false
@@ -128,13 +128,13 @@ ApplicationWindow {
 
     Text {
         id: modeHint
-        font.pixelSize: 20
-        font.capitalization: Font.AllUppercase
-        color: "#95a5a6"
-        text: editMode ? "Edit" : "View"
+        font.pointSize: 20
+        font.capitalization: Font.SmallCaps
+        color: "#b4b4b4"
+        text: editMode ? "Edit mode" : "View mode"
         anchors.top: parent.top
         anchors.right: parent.right
-        anchors.rightMargin: 15
+        anchors.rightMargin: 20
         anchors.topMargin: 15
     }
 
@@ -166,7 +166,14 @@ ApplicationWindow {
             ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
-            ctrl.keyPressed(event.key, event.text)
+
+            if(ctrl.modifierKeyControl && event.key === Qt.Key_V) {
+                viewbtn.checked = true
+            } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
+                editbtn.checked = true
+            } else {
+                ctrl.keyPressed(event.key, event.text)
+            }
 
             if(ctrl.modifierKeyControl) {
                 keyHint.setText(event.text)
@@ -185,6 +192,7 @@ ApplicationWindow {
         MouseArea {
             id: drag
             anchors.fill: parent
+            property real dragOffset: 50.0
             property int cx0
             property int cy0
             property int x0
@@ -208,6 +216,16 @@ ApplicationWindow {
                         cv.canvasWindow.y = cy0 + (y0 - mouse.y)
                         cv.requestPaint()
                     } else if(editMode) {
+                        if(mouse.x < 0 + dragOffset) {
+                            cv.canvasWindow.x += -5.0
+                        } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
+                            cv.canvasWindow.x += 5.0
+                        }
+                        if(mouse.y < 0 + dragOffset) {
+                            cv.canvasWindow.y += -5.0
+                        } else if(mouse.y > cv.canvasWindow.height - dragOffset) {
+                            cv.canvasWindow.y += 5.0
+                        }
                         ctrl.mouseMoved(mouse.x, mouse.y)
                     }
                 }
@@ -240,6 +258,7 @@ ApplicationWindow {
         property var places: []
         property var transitions: []
         property var arcs: []
+        property var magicStroke
 
         onUpdatedChanged: {
             places = []
@@ -263,6 +282,7 @@ ApplicationWindow {
                 }
             }
 
+            magicStroke = tegModel.isStrokeAvailable() ? tegModel.getMagicStrokeSpec() : undefined
             cv.requestPaint()
         }
 

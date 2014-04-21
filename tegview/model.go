@@ -59,6 +59,11 @@ type transition struct {
 	horizontal bool
 }
 
+type magicStroke struct {
+	start *geometry.Point
+	end   *geometry.Point
+}
+
 func NewPlace(x float64, y float64) *place {
 	return &place{
 		Circle: geometry.NewCircle(x, y, PlaceRadius),
@@ -160,6 +165,7 @@ type TegModel struct {
 	focus       item
 	places      []*place
 	transitions []*transition
+	magicStroke *magicStroke
 	selected    map[item]bool
 
 	PlacesLen      int
@@ -190,6 +196,10 @@ type TransitionSpec struct {
 	ArcSpecs   *List
 }
 
+type MagicStrokeSpec struct {
+	X0, Y0, X1, Y1 float64
+}
+
 type ArcSpec struct {
 	Place   *PlaceSpec
 	Index   int
@@ -206,6 +216,23 @@ func (tm *TegModel) GetPlaceSpec(i int) *PlaceSpec {
 
 func (tm *TegModel) GetTransitionSpec(i int) *TransitionSpec {
 	return tm.newTransitionSpec(tm.transitions[i])
+}
+
+func (tm *TegModel) IsStrokeAvailable() bool {
+	if tm.magicStroke.start == nil || tm.magicStroke.end == nil {
+		return false
+	}
+	return true
+}
+
+func (tm *TegModel) GetMagicStrokeSpec() *MagicStrokeSpec {
+	if tm.magicStroke.start == nil || tm.magicStroke.end == nil {
+		return nil
+	}
+	return &MagicStrokeSpec{
+		tm.magicStroke.start.X(), tm.magicStroke.start.Y(),
+		tm.magicStroke.end.X(), tm.magicStroke.end.Y(),
+	}
 }
 
 func (tm *TegModel) newPlaceSpec(p *place) *PlaceSpec {
@@ -312,16 +339,17 @@ func (tm *TegModel) areConnected(t *transition, p *place, inbound bool) bool {
 
 func (tm *TegModel) connectItems(t *transition, p *place, inbound bool) {
 	if tm.areConnected(t, p, inbound) {
-		panic("already connected")
+		return
 	}
-	if inbound {
+	if inbound && p.out == nil {
 		p.out = t
 		t.in = append(t.in, p)
-	} else {
+		p.resetControlPoint(false)
+	} else if !inbound && p.in == nil {
 		p.in = t
 		t.out = append(t.out, p)
+		p.resetControlPoint(true)
 	}
-	p.resetControlPoint(!inbound)
 }
 
 func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
@@ -350,6 +378,7 @@ func NewModel() *TegModel {
 		focus:       nil,
 		places:      make([]*place, 0, 256),
 		transitions: make([]*transition, 0, 256),
+		magicStroke: &magicStroke{nil, nil},
 		selected:    make(map[item]bool, 256),
 
 		PlacesLen:      0,

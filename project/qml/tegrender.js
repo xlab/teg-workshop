@@ -22,6 +22,24 @@ function render(cv, region, zoom, model) {
     for(var idx in model.arcs) {
         renderArc(ctx, zoom, model.arcs[idx])
     }
+
+    if(model.magicStroke) {
+        renderMagicStroke(ctx, zoom, model.magicStroke)
+    }
+}
+
+function renderMagicStroke(ctx, zoom, stroke) {
+    var xy0 = absCoord(ctx, stroke.x0*zoom, stroke.y0*zoom)
+    var xy1 = absCoord(ctx, stroke.x1*zoom, stroke.y1*zoom)
+    var thick = 1.5 * zoom
+
+    ctx.beginPath()
+    ctx.lineWidth =  thick
+    ctx.strokeStyle = "#2980b9"
+    ctx.moveTo(xy0.x, xy0.y)
+    ctx.lineTo(xy1.x, xy1.y)
+    ctx.stroke()
+    ctx.reset()
 }
 
 function renderArc(ctx, zoom, arc) {

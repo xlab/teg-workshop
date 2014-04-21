@@ -4,6 +4,8 @@ import (
 	"log"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/xlab/teg-workshop/geometry"
 )
 
 const (
@@ -93,6 +95,32 @@ func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 	return
 }
 
+func (c *Ctrl) shiftItem(it item, dx float64, dy float64) {
+	it.Shift(dx, dy)
+
+	if place, ok := it.(*place); ok {
+		if c.ModifierKeyShift {
+			place.resetProperties()
+		} else {
+			if place.in != nil {
+				if place.inControl.modified {
+					place.inControl.Shift(dx, dy)
+				} else {
+					place.resetControlPoint(true)
+				}
+			}
+
+			if place.out != nil {
+				if place.outControl.modified {
+					place.outControl.Shift(dx, dy)
+				} else {
+					place.resetControlPoint(false)
+				}
+			}
+		}
+	}
+}
+
 func (c *Ctrl) handleEvents() {
 	go func() {
 		var x0, y0 float64
@@ -172,63 +200,103 @@ func (c *Ctrl) handleEvents() {
 					x0, y0 = x, y
 					it, ok := c.model.findDrawable(x, y)
 
-					if !ok && !c.ModifierKeyControl {
-						c.model.deselectAll()
-					} else if ok {
-						x0, y0 = it.Center()[0], it.Center()[1]
-						if control, ok := it.(*controlPoint); ok {
-							control.modified = true
+					if c.ModifierKeyAlt {
+						if !ok {
+							c.model.deselectAll()
+						} else if ok {
 							focused = it
-						} else {
-							focused = it
-							if len(c.model.selected) > 1 && c.model.isSelected(it) && c.ModifierKeyControl {
-								c.model.deselectItem(it)
-							} else {
-								if !c.ModifierKeyControl {
-									c.model.deselectAll()
-								}
-								c.model.selectItem(it)
+							if len(c.model.selected) > 1 {
+								c.model.deselectAll()
 							}
-							if place, ok := focused.(*place); ok {
-								if c.ModifierKeyShift {
-									place.resetProperties()
-								}
-							}
+							c.model.selectItem(it)
 						}
-					}
-					c.model.updated()
-				case EventMouseMove:
-					dx, dy := x-x0, y-y0
-					x0, y0 = x, y
-					if focused != nil {
-						focused.Move(x, y)
-
-						if place, ok := focused.(*place); ok {
-							if c.ModifierKeyShift {
-								place.resetProperties()
+						c.model.magicStroke.start = geometry.NewPoint(x, y)
+						c.model.updated()
+					} else {
+						if !ok && !c.ModifierKeyControl {
+							c.model.deselectAll()
+						} else if ok {
+							x0, y0 = it.Center()[0], it.Center()[1]
+							focused = it
+							if control, ok := it.(*controlPoint); ok {
+								control.modified = true
 							} else {
-								if place.in != nil {
-									if place.inControl.modified {
-										place.inControl.Shift(dx, dy)
-									} else {
-										place.resetControlPoint(true)
+								if len(c.model.selected) > 1 {
+									if c.model.isSelected(it) && c.ModifierKeyControl {
+										c.model.deselectItem(it)
+									} else if !c.model.isSelected(it) {
+										c.model.deselectAll()
 									}
-								}
-
-								if place.out != nil {
-									if place.outControl.modified {
-										place.outControl.Shift(dx, dy)
-									} else {
-										place.resetControlPoint(false)
-									}
+								} else if !c.ModifierKeyControl {
+									c.model.deselectAll()
+									c.model.selectItem(it)
+								} else {
+									c.model.selectItem(it)
 								}
 							}
 						}
 						c.model.updated()
 					}
+				case EventMouseMove:
+					dx, dy := x-x0, y-y0
+					x0, y0 = x, y
+
+					if c.ModifierKeyAlt {
+						c.model.magicStroke.end = geometry.NewPoint(x, y)
+						if focused != nil {
+							// search for connect
+							if it, ok := c.model.findDrawable(x, y); ok {
+								c.model.selectItem(it)
+							} else {
+								c.model.deselectAll()
+								c.model.selectItem(focused)
+							}
+						} else {
+							// search for cut
+
+						}
+						c.model.updated()
+					} else {
+						if _, ok := focused.(*controlPoint); ok {
+							focused.Move(x, y)
+							c.model.updated()
+						} else {
+							if len(c.model.selected) > 1 {
+								for it := range c.model.selected {
+									c.shiftItem(it, dx, dy)
+								}
+								c.model.updated()
+							} else if focused != nil {
+								c.shiftItem(focused, dx, dy)
+								c.model.updated()
+							}
+						}
+					}
 
 				case EventMouseRelease:
+					if c.ModifierKeyAlt && c.model.magicStroke.start != nil {
+						if it, ok := c.model.findDrawable(x, y); focused != nil && ok {
+							if p, ok := it.(*place); ok {
+								if t, ok := focused.(*transition); ok {
+									c.model.connectItems(t, p, false)
+								} else {
+									log.Println("Unable to connect smth to place")
+								}
+							} else if t, ok := it.(*transition); ok {
+								if p, ok := focused.(*place); ok {
+									c.model.connectItems(t, p, true)
+								} else {
+									log.Println("Unable to connect smth to transition")
+								}
+							}
+						}
+						c.model.deselectAll()
+					}
+
 					focused = nil
+					c.model.magicStroke.start = nil
+					c.model.magicStroke.end = nil
+					c.model.updated()
 
 				case EventMouseClick:
 					// unused
