@@ -1,6 +1,9 @@
 package tegview
 
 import (
+	"math"
+	"sort"
+
 	"github.com/xlab/teg-workshop/geometry"
 	"gopkg.in/qml.v0"
 )
@@ -59,9 +62,8 @@ type transition struct {
 	horizontal bool
 }
 
-type magicStroke struct {
-	start *geometry.Point
-	end   *geometry.Point
+type MagicStroke struct {
+	X0, X1, Y0, Y1 float64
 }
 
 func NewPlace(x float64, y float64) *place {
@@ -73,6 +75,35 @@ func NewPlace(x float64, y float64) *place {
 func NewTransition(x float64, y float64) *transition {
 	return &transition{
 		Rect: geometry.NewRect(x, y, TransitionWidth, TransitionHeight),
+	}
+}
+
+type places []*place
+type placesByX struct{ places }
+type placesByY struct{ places }
+
+func (p places) Len() int      { return len(p) }
+func (p places) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+func (p placesByX) Less(i, j int) bool {
+	return p.places[i].Center()[0] < p.places[j].Center()[0]
+}
+func (p placesByY) Less(i, j int) bool {
+	return p.places[i].Center()[1] < p.places[j].Center()[1]
+}
+
+func (t *transition) OrderArcs(inbound bool) {
+	if inbound {
+		if t.horizontal {
+			sort.Sort(placesByX{t.in})
+		} else {
+			sort.Sort(placesByY{t.in})
+		}
+	} else {
+		if t.horizontal {
+			sort.Sort(placesByX{t.out})
+		} else {
+			sort.Sort(placesByY{t.out})
+		}
 	}
 }
 
@@ -110,15 +141,15 @@ func (p *place) resetProperties() {
 
 func (p *place) resetControlPoint(inbound bool) {
 	if inbound {
-		tcenter := p.in.Center()
-		point := p.BorderPoint(tcenter[0], tcenter[1], 70.0)
+		centerT := p.in.Center()
+		point := p.BorderPoint(centerT[0], centerT[1], 30.0)
 		p.inControl = &controlPoint{
 			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
 			false,
 		}
 	} else {
-		tcenter := p.out.Center()
-		point := p.BorderPoint(tcenter[0], tcenter[1], 50.0)
+		centerT := p.out.Center()
+		point := p.BorderPoint(centerT[0], centerT[1], 10.0)
 		p.outControl = &controlPoint{
 			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
 			false,
@@ -165,12 +196,13 @@ type TegModel struct {
 	focus       item
 	places      []*place
 	transitions []*transition
-	magicStroke *magicStroke
 	selected    map[item]bool
 
-	PlacesLen      int
-	TransitionsLen int
-	Updated        bool // fake trigger
+	PlacesLen            int
+	TransitionsLen       int
+	Updated              bool // fake trigger
+	MagicStroke          *MagicStroke
+	MagicStrokeAvailable bool
 }
 
 type ControlPointSpec struct {
@@ -196,10 +228,6 @@ type TransitionSpec struct {
 	ArcSpecs   *List
 }
 
-type MagicStrokeSpec struct {
-	X0, Y0, X1, Y1 float64
-}
-
 type ArcSpec struct {
 	Place   *PlaceSpec
 	Index   int
@@ -210,29 +238,16 @@ func (t *TegModel) updated() {
 	qml.Changed(t, &t.Updated)
 }
 
+func (t *TegModel) updatedMagicStroke() {
+	qml.Changed(t, &t.MagicStrokeAvailable)
+}
+
 func (tm *TegModel) GetPlaceSpec(i int) *PlaceSpec {
 	return tm.newPlaceSpec(tm.places[i])
 }
 
 func (tm *TegModel) GetTransitionSpec(i int) *TransitionSpec {
 	return tm.newTransitionSpec(tm.transitions[i])
-}
-
-func (tm *TegModel) IsStrokeAvailable() bool {
-	if tm.magicStroke.start == nil || tm.magicStroke.end == nil {
-		return false
-	}
-	return true
-}
-
-func (tm *TegModel) GetMagicStrokeSpec() *MagicStrokeSpec {
-	if tm.magicStroke.start == nil || tm.magicStroke.end == nil {
-		return nil
-	}
-	return &MagicStrokeSpec{
-		tm.magicStroke.start.X(), tm.magicStroke.start.Y(),
-		tm.magicStroke.end.X(), tm.magicStroke.end.Y(),
-	}
 }
 
 func (tm *TegModel) newPlaceSpec(p *place) *PlaceSpec {
@@ -279,23 +294,101 @@ func (tm *TegModel) newTransitionSpec(t *transition) *TransitionSpec {
 	return spec
 }
 
-func (t *TegModel) fakeData() {
-	t.places = []*place{
-		NewPlace(0, 0),
-		NewPlace(0, 120),
-		NewPlace(0, 180),
-	}
+func (t *TegModel) addPlace(x, y float64) *place {
+	place := NewPlace(x, y)
+	t.places = append(t.places, place)
+	t.PlacesLen = len(t.places)
+	return place
+}
 
-	t.transitions = []*transition{
-		NewTransition(0-200, 0),
-		NewTransition(0-200, 120),
+func (t *TegModel) removePlace(p *place) {
+	if p.in != nil {
+		t.disconnectItems(p.in, p, false)
+	}
+	if p.out != nil {
+		t.disconnectItems(p.out, p, true)
+	}
+	for i, place := range t.places {
+		if place == p {
+			t.places = append(t.places[:i], t.places[i+1:]...)
+		}
 	}
 	t.PlacesLen = len(t.places)
-	t.TransitionsLen = len(t.transitions)
+}
 
-	t.connectItems(t.transitions[1], t.places[0], true)
-	t.connectItems(t.transitions[1], t.places[0], false)
-	t.connectItems(t.transitions[1], t.places[1], true)
+func (t *TegModel) addTransition(x, y float64) *transition {
+	transition := NewTransition(x, y)
+	t.transitions = append(t.transitions, transition)
+	t.TransitionsLen = len(t.transitions)
+	return transition
+}
+
+func (tm *TegModel) removeTransition(t *transition) {
+	for _, place := range t.in {
+		place.out = nil
+	}
+	for _, place := range t.out {
+		place.in = nil
+	}
+	for i, transition := range tm.transitions {
+		if transition == t {
+			tm.transitions = append(tm.transitions[:i], tm.transitions[i+1:]...)
+		}
+	}
+	tm.TransitionsLen = len(tm.transitions)
+}
+
+func (t *TegModel) fakeData() {
+	p1 := t.addPlace(-138.863281, -96.941406)
+	p1.timer, p1.counter = 8, 0
+	p2 := t.addPlace(-138.468750, 2.511719)
+	p2.timer, p2.counter = 3, 0
+	p3 := t.addPlace(67.714844, -56.714844)
+	p3.timer, p3.counter = 5, 3
+	p4 := t.addPlace(-61.046875, -56.257812)
+	p4.timer, p4.counter = 3, 4
+	p5 := t.addPlace(4.554688, 149.593750)
+	p5.timer, p5.counter = 2, 2
+	p5.label = "delayed\ncycle"
+	p6 := t.addPlace(155.371094, -63.152344)
+	p7 := t.addPlace(118.007812, 8.843750)
+
+	t1 := t.addTransition(-265.976562, -46.679688)
+	t1.label = "input sink"
+	t2 := t.addTransition(6.859375, 29.503906)
+	t2.label = "x1"
+	t3 := t.addTransition(7.425781, -145.574219)
+	t3.label = "x2"
+	t4 := t.addTransition(253.656250, -35.816406)
+	t4.label = "output sink"
+
+	t.connectItems(t1, p1, false)
+	t.connectItems(t1, p2, false)
+	t.connectItems(t2, p2, true)
+	t.connectItems(t2, p3, true)
+	t.connectItems(t2, p4, false)
+	t.connectItems(t2, p5, true)
+	t.connectItems(t2, p5, false)
+	t.connectItems(t2, p7, false)
+	t.connectItems(t3, p1, true)
+	t.connectItems(t3, p3, false)
+	t.connectItems(t3, p4, true)
+	t.connectItems(t3, p6, false)
+	t.connectItems(t4, p6, true)
+	t.connectItems(t4, p7, true)
+
+	p5.inControl.Move(68.4609375, 106.078125)
+	p5.inControl.modified = true
+	p5.outControl.Move(-55.18359375, 102.73046875)
+	p5.outControl.modified = true
+	p3.inControl.Move(73.6484375, -94.69921875)
+	p3.inControl.modified = true
+	p3.outControl.Move(-21.8046875, -32.6015625)
+	p3.outControl.modified = true
+	p4.inControl.Move(18.88671875, -50.78515625)
+	p4.inControl.modified = true
+	p4.outControl.Move(-57.30078125, -109.2734375)
+	p4.outControl.modified = true
 }
 
 func (t *TegModel) deselectAll() {
@@ -341,15 +434,71 @@ func (tm *TegModel) connectItems(t *transition, p *place, inbound bool) {
 	if tm.areConnected(t, p, inbound) {
 		return
 	}
+	var changed bool
 	if inbound && p.out == nil {
 		p.out = t
 		t.in = append(t.in, p)
 		p.resetControlPoint(false)
+		t.OrderArcs(true)
+		changed = true
 	} else if !inbound && p.in == nil {
 		p.in = t
 		t.out = append(t.out, p)
+		t.OrderArcs(false)
 		p.resetControlPoint(true)
+		changed = true
 	}
+
+	if changed {
+		if t.horizontal {
+			w := calcTransitionHeight(len(t.in), len(t.out))
+			t.Resize(w, TransitionWidth) // rotated
+		} else {
+			h := calcTransitionHeight(len(t.in), len(t.out))
+			t.Resize(TransitionWidth, h) // normal
+		}
+	}
+}
+
+func (tm *TegModel) disconnectItems(t *transition, p *place, inbound bool) {
+	if !tm.areConnected(t, p, inbound) {
+		return
+	}
+	var changed bool
+	if inbound && p.out != nil {
+		p.out = nil
+		for i, it := range t.in {
+			if it == p {
+				t.in = append(t.in[:i], t.in[i+1:]...)
+			}
+		}
+		p.outControl = nil
+		changed = true
+	} else if !inbound && p.in != nil {
+		p.in = nil
+		for i, it := range t.out {
+			if it == p {
+				t.out = append(t.out[:i], t.out[i+1:]...)
+			}
+		}
+		p.inControl = nil
+		changed = true
+	}
+
+	if changed {
+		if t.horizontal {
+			w := calcTransitionHeight(len(t.in), len(t.out))
+			t.Resize(w, TransitionWidth) // rotated
+		} else {
+			h := calcTransitionHeight(len(t.in), len(t.out))
+			t.Resize(TransitionWidth, h) // normal
+		}
+	}
+}
+
+func calcTransitionHeight(in, out int) float64 {
+	return math.Max(math.Max(float64(in)*TransitionHeight/2.0,
+		float64(out)*TransitionHeight/2.0), TransitionHeight)
 }
 
 func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
@@ -378,11 +527,11 @@ func NewModel() *TegModel {
 		focus:       nil,
 		places:      make([]*place, 0, 256),
 		transitions: make([]*transition, 0, 256),
-		magicStroke: &magicStroke{nil, nil},
 		selected:    make(map[item]bool, 256),
 
 		PlacesLen:      0,
 		TransitionsLen: 0,
 		Updated:        false,
+		MagicStroke:    &MagicStroke{},
 	}
 }

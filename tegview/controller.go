@@ -128,71 +128,8 @@ func (c *Ctrl) handleEvents() {
 		for {
 			switch ev := (<-c.events).(type) {
 			case *keyEvent:
-				var updated bool
-				if c.ModifierKeyControl {
-					for it := range c.model.selected {
-						if place, ok := it.(*place); ok {
-							switch ev.keycode {
-							case KeyCodeD:
-								place.counter++
-							case KeyCodeC:
-								place.counter--
-							case KeyCodeF:
-								place.resetProperties()
-							case KeyCodeT:
-								place.timer++
-							case KeyCodeG:
-								place.timer--
-							}
-							if place.counter > MaxPlaceCounter {
-								place.counter = MaxPlaceCounter
-							} else if place.counter < MinPlaceCounter {
-								place.counter = 0
-							}
-							if place.timer > MaxPlaceTimer {
-								place.timer = MaxPlaceTimer
-							} else if place.timer < MinPlaceTimer {
-								place.timer = 0
-							}
-							updated = true
-						}
-					}
-				} else {
-					// plaintext
-					for it := range c.model.selected {
-						l := it.Label()
-						switch ev.keycode {
-						case 8, 16777219, 16777223: // backspace
-							if len(l) > 0 {
-								it.SetLabel(l[:len(l)-1])
-							}
-						case 13, 16777220, 16777221: // return
-							it.SetLabel(l + "\n")
-						case 10:
-							it.SetLabel(l + " ")
-						default:
-							rune, _ := utf8.DecodeRuneInString(ev.text)
-							if rune != utf8.RuneError && unicode.IsGraphic(rune) {
-								it.SetLabel(l + string(rune))
-							}
-						}
-						updated = true
-					}
-				}
-				if updated {
-					c.model.updated()
-				}
+				c.handleKeyEvent(ev)
 			case *mouseEvent:
-				if ev.x < 0 {
-					c.CanvasWindowX += ev.x - 10.0
-				} else if ev.x > c.CanvasWindowWidth {
-					c.CanvasWindowX += ev.x - c.CanvasWindowWidth + 10.0
-				}
-				if ev.y < 0 {
-					c.CanvasWindowY += ev.y - 10.0
-				} else if ev.y > c.CanvasWindowHeight {
-					c.CanvasWindowY += ev.y - c.CanvasWindowHeight + 10.0
-				}
 				x, y := c.WindowCoordsToRelativeGlobal(ev.x, ev.y)
 
 				switch ev.kind {
@@ -205,13 +142,22 @@ func (c *Ctrl) handleEvents() {
 							c.model.deselectAll()
 						} else if ok {
 							focused = it
-							if len(c.model.selected) > 1 {
-								c.model.deselectAll()
-							}
+							c.model.deselectAll()
 							c.model.selectItem(it)
 						}
-						c.model.magicStroke.start = geometry.NewPoint(x, y)
+						c.model.MagicStroke.X0 = x
+						c.model.MagicStroke.Y0 = y
 						c.model.updated()
+					} else if c.ModifierKeyShift && !ok {
+						c.model.deselectAll()
+						var it item
+						if c.ModifierKeyControl {
+							it = c.model.addTransition(x, y)
+						} else {
+							it = c.model.addPlace(x, y)
+						}
+						c.model.selectItem(it)
+						focused = it
 					} else {
 						if !ok && !c.ModifierKeyControl {
 							c.model.deselectAll()
@@ -224,8 +170,11 @@ func (c *Ctrl) handleEvents() {
 								if len(c.model.selected) > 1 {
 									if c.model.isSelected(it) && c.ModifierKeyControl {
 										c.model.deselectItem(it)
+									} else if c.ModifierKeyControl {
+										c.model.selectItem(it)
 									} else if !c.model.isSelected(it) {
 										c.model.deselectAll()
+										c.model.selectItem(it)
 									}
 								} else if !c.ModifierKeyControl {
 									c.model.deselectAll()
@@ -242,7 +191,10 @@ func (c *Ctrl) handleEvents() {
 					x0, y0 = x, y
 
 					if c.ModifierKeyAlt {
-						c.model.magicStroke.end = geometry.NewPoint(x, y)
+						c.model.MagicStroke.X1 = x
+						c.model.MagicStroke.Y1 = y
+						c.model.MagicStrokeAvailable = true
+						c.model.updatedMagicStroke()
 						if focused != nil {
 							// search for connect
 							if it, ok := c.model.findDrawable(x, y); ok {
@@ -251,9 +203,6 @@ func (c *Ctrl) handleEvents() {
 								c.model.deselectAll()
 								c.model.selectItem(focused)
 							}
-						} else {
-							// search for cut
-
 						}
 						c.model.updated()
 					} else {
@@ -264,20 +213,49 @@ func (c *Ctrl) handleEvents() {
 							if len(c.model.selected) > 1 {
 								for it := range c.model.selected {
 									c.shiftItem(it, dx, dy)
+									if place, ok := it.(*place); ok {
+										if place.in != nil {
+											place.in.OrderArcs(false)
+										}
+										if place.out != nil {
+											place.out.OrderArcs(true)
+										}
+									} else if transition, ok := it.(*transition); ok {
+										transition.OrderArcs(true)
+										transition.OrderArcs(false)
+									}
 								}
 								c.model.updated()
 							} else if focused != nil {
 								c.shiftItem(focused, dx, dy)
 								c.model.updated()
+								if place, ok := focused.(*place); ok {
+									if place.in != nil {
+										place.in.OrderArcs(false)
+									}
+									if place.out != nil {
+										place.out.OrderArcs(true)
+									}
+								} else if transition, ok := focused.(*transition); ok {
+									transition.OrderArcs(true)
+									transition.OrderArcs(false)
+								}
 							}
 						}
 					}
 
 				case EventMouseRelease:
-					if c.ModifierKeyAlt && c.model.magicStroke.start != nil {
-						if it, ok := c.model.findDrawable(x, y); focused != nil && ok {
-							if p, ok := it.(*place); ok {
+					if c.ModifierKeyAlt && c.model.MagicStrokeAvailable {
+						if it, ok := c.model.findDrawable(x, y); focused != nil && focused != it && ok {
+							if p, ok := it.(*place); ok && p.in == nil {
 								if t, ok := focused.(*transition); ok {
+									c.model.connectItems(t, p, false)
+								} else if p2, ok := focused.(*place); ok && p2.out == nil {
+									// p -- p2, new transition between
+									pCenter, p2Center := p.Center(), p2.Center()
+									t := c.model.addTransition((pCenter[0]+p2Center[0])/2,
+										(pCenter[1]+p2Center[1])/2)
+									c.model.connectItems(t, p2, true)
 									c.model.connectItems(t, p, false)
 								} else {
 									log.Println("Unable to connect smth to place")
@@ -285,17 +263,48 @@ func (c *Ctrl) handleEvents() {
 							} else if t, ok := it.(*transition); ok {
 								if p, ok := focused.(*place); ok {
 									c.model.connectItems(t, p, true)
+								} else if t2, ok := focused.(*transition); ok {
+									// t -- t2, new place between
+									tCenter, t2Center := t.Center(), t2.Center()
+									p := c.model.addPlace((tCenter[0]+t2Center[0])/2,
+										(tCenter[1]+t2Center[1])/2)
+									c.model.connectItems(t2, p, false)
+									c.model.connectItems(t, p, true)
 								} else {
 									log.Println("Unable to connect smth to transition")
 								}
 							}
+							c.model.deselectAll()
+						} else if focused == nil && !ok {
+							// stroking the void, cut the connections
+							start := geometry.NewPoint(c.model.MagicStroke.X0, c.model.MagicStroke.Y0)
+							end := geometry.NewPoint(c.model.MagicStroke.X1, c.model.MagicStroke.Y1)
+
+							for _, transition := range c.model.transitions {
+								centerT := transition.Center()
+								for _, place := range transition.in {
+									centerP := place.Center()
+									control := place.outControl.Center()
+									if geometry.CheckSegmentsCrossing(start, end, centerP, control) ||
+										geometry.CheckSegmentsCrossing(start, end, control, centerT) {
+										c.model.disconnectItems(transition, place, true)
+									}
+								}
+								for _, place := range transition.out {
+									centerP := place.Center()
+									control := place.inControl.Center()
+									if geometry.CheckSegmentsCrossing(start, end, centerP, control) ||
+										geometry.CheckSegmentsCrossing(start, end, control, centerT) {
+										c.model.disconnectItems(transition, place, false)
+									}
+								}
+							}
 						}
-						c.model.deselectAll()
 					}
 
 					focused = nil
-					c.model.magicStroke.start = nil
-					c.model.magicStroke.end = nil
+					c.model.MagicStrokeAvailable = false
+					c.model.updatedMagicStroke()
 					c.model.updated()
 
 				case EventMouseClick:
@@ -305,8 +314,9 @@ func (c *Ctrl) handleEvents() {
 					if c.ModifierKeyControl || c.ModifierKeyShift {
 						continue
 					}
-
 					if focused != nil {
+						c.model.deselectAll()
+						c.model.selectItem(focused)
 						if transition, ok := focused.(*transition); ok {
 							transition.Rotate()
 							c.model.updated()
@@ -320,11 +330,87 @@ func (c *Ctrl) handleEvents() {
 							c.model.updated()
 						}
 					}
-
 				}
 			default:
 				log.Println("Event not supported")
 			}
 		}
 	}()
+}
+
+func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
+	var updated bool
+	if c.ModifierKeyControl {
+		for it := range c.model.selected {
+			if place, ok := it.(*place); ok {
+				switch ev.keycode {
+				case KeyCodeD:
+					place.counter++
+				case KeyCodeC:
+					place.counter--
+				case KeyCodeF:
+					place.resetProperties()
+				case KeyCodeT:
+					place.timer++
+				case KeyCodeG:
+					place.timer--
+				case 16777219, 16777223, 8:
+					c.model.deselectItem(it)
+					c.model.removePlace(place)
+				}
+				if place.counter > MaxPlaceCounter {
+					place.counter = MaxPlaceCounter
+				} else if place.counter < MinPlaceCounter {
+					place.counter = 0
+				}
+				if place.timer > MaxPlaceTimer {
+					place.timer = MaxPlaceTimer
+				} else if place.timer < MinPlaceTimer {
+					place.timer = 0
+				}
+				updated = true
+			} else if transition, ok := it.(*transition); ok {
+				switch ev.keycode {
+				case KeyCodeF:
+					place.resetProperties()
+					updated = true
+				case 16777219, 16777223, 8:
+					c.model.deselectItem(it)
+					c.model.removeTransition(transition)
+					updated = true
+				}
+			}
+		}
+	} else {
+		// plaintext
+		for it := range c.model.selected {
+			l := it.Label()
+			switch ev.keycode {
+			case 8, 16777219, 16777223: // backspace
+				if len(l) > 0 {
+					it.SetLabel(l[:len(l)-1])
+					updated = true
+				}
+			case 13, 16777220, 16777221: // return
+				it.SetLabel(l + "\n")
+				updated = true
+			case 10:
+				it.SetLabel(l + " ")
+				updated = true
+			default:
+				rune, _ := utf8.DecodeRuneInString(ev.text)
+				if rune != utf8.RuneError && unicode.IsGraphic(rune) {
+					it.SetLabel(l + string(rune))
+					updated = true
+				}
+			}
+		}
+		if !updated && c.ModifierKeyAlt {
+			// displaying connections
+			updated = true
+		}
+	}
+	if updated {
+		c.model.updated()
+	}
 }

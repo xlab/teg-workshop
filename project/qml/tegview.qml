@@ -23,6 +23,7 @@ ApplicationWindow {
                 text: "-"
                 onClicked: cv.zoom -= 0.2
             }
+            /*
             ToolButton {
                 text: "Rand"
                 onClicked: {
@@ -37,6 +38,7 @@ ApplicationWindow {
                     return Math.floor(Math.random() * (max - min + 1)) + min;
                 }
             }
+            */
             Rectangle {
                 width: 3
                 anchors.top: parent.top
@@ -48,11 +50,11 @@ ApplicationWindow {
             RadioButton {
                 id: viewbtn
                 exclusiveGroup: mode
-                checked: true
                 text: "View"
             }
             RadioButton {
                 id: editbtn
+                checked: true
                 exclusiveGroup: mode
                 text: "Edit"
             }
@@ -187,6 +189,7 @@ ApplicationWindow {
 
             keyHint.setText("")
             event.accepted = true
+            cv.requestPaint()
         }
 
         MouseArea {
@@ -258,7 +261,9 @@ ApplicationWindow {
         property var places: []
         property var transitions: []
         property var arcs: []
-        property var magicStroke
+        property var magicStroke: tegModel.magicStroke
+        property var magicStrokeAvailable: tegModel.magicStrokeAvailable
+        property var altPressed: ctrl.modifierKeyAlt
 
         onUpdatedChanged: {
             places = []
@@ -282,7 +287,6 @@ ApplicationWindow {
                 }
             }
 
-            magicStroke = tegModel.isStrokeAvailable() ? tegModel.getMagicStrokeSpec() : undefined
             cv.requestPaint()
         }
 

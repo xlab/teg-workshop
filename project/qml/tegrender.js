@@ -23,7 +23,7 @@ function render(cv, region, zoom, model) {
         renderArc(ctx, zoom, model.arcs[idx])
     }
 
-    if(model.magicStroke) {
+    if(model.magicStrokeAvailable) {
         renderMagicStroke(ctx, zoom, model.magicStroke)
     }
 }
@@ -101,15 +101,15 @@ function renderArc(ctx, zoom, arc) {
     var cp_t
     if(inbound) {
         if(horizontal) {
-            cp_t = {"x": xyA_t.x, "y": xyA_t.y - 50.0}
+            cp_t = {"x": xyA_t.x, "y": xyA_t.y - 50.0*zoom}
         } else {
-            cp_t = {"x": xyA_t.x - 50.0, "y": xyA_t.y}
+            cp_t = {"x": xyA_t.x - 50.0*zoom, "y": xyA_t.y}
         }
     } else {
         if(horizontal) {
-            cp_t = {"x": xyA_t.x, "y": xyA_t.y + 50.0}
+            cp_t = {"x": xyA_t.x, "y": xyA_t.y + 50.0*zoom}
         } else {
-            cp_t = {"x": xyA_t.x + 50.0, "y": xyA_t.y}
+            cp_t = {"x": xyA_t.x + 50.0*zoom, "y": xyA_t.y}
         }
     }
     
@@ -118,10 +118,27 @@ function renderArc(ctx, zoom, arc) {
                                "cx0":xy_c.x + wh_c.w/2, "cy0":xy_c.y + wh_c.h/2,
                                "cx1":cp_t.x, "cy1":cp_t.y},
                            {"p1":p1, "p2":p2, "p3":p3, "p4":p4})
+
+    if(model.altPressed) {
+        ctx.beginPath()
+        ctx.strokeStyle = "#3498db"
+        ctx.lineWidth = 1.0 * zoom
+        if(horizontal) {
+            ctx.moveTo(xy_p.x + wh_p.h/2, xy_p.y + wh_p.w/2)
+            ctx.lineTo(xy_c.x + wh_c.h/2, xy_c.y + wh_c.w/2)
+            ctx.lineTo(xy_t.x + wh_t.h/2, xy_t.y + wh_t.w/2)
+        } else {
+            ctx.moveTo(xy_p.x + wh_p.w/2, xy_p.y + wh_p.h/2)
+            ctx.lineTo(xy_c.x + wh_c.w/2, xy_c.y + wh_c.h/2)
+            ctx.lineTo(xy_t.x + wh_t.w/2, xy_t.y + wh_t.h/2)
+        }
+
+        ctx.stroke()
+    }
     
     ctx.beginPath()
     if(place.selected) {
-        ctx.fillStyle = sel_color
+        ctx.fillStyle = "#f1c40f"
         ctx.rect(xy_c.x, xy_c.y, wh_c.w, wh_c.h)
         ctx.fill()
     }
@@ -216,7 +233,8 @@ function renderTransition(ctx, zoom, transition) {
     if(transition.label) {
         var labelSize = 14.0 * zoom
         if(transition.horizontal) {
-            renderText(ctx, labelSize, x0 + w + labelSize, y0 , h, transition.label, true)
+            // fix horizontal text alignment
+            renderText(ctx, labelSize, x0 + w + labelSize, y0 + h/2, h, transition.label, true)
         } else {
             renderText(ctx, labelSize, x0, y0 + h + labelSize, w, transition.label)
         }
@@ -295,9 +313,9 @@ function renderPlaceValue(ctx, zoom, x0, y0, width, height, counter, timer) {
         var rows = 1
         var vmargin = calcCenteringMargin(height, 4*thick, rows)
         
-        if (counter > 1) {
-            var hspacing = calcSpacing(width, thick / 2, timer+1)
-            var hmargin = calcCenteringMargin(width, thick / 2, timer+1)
+        if (counter > 0) {
+            var hspacing = calcSpacing(width, thick, timer + 1)
+            var hmargin = calcCenteringMargin(width, thick, timer + 1)
             var d = hmargin + hspacing
             
             renderDotColumn(ctx, thick, x0 + hmargin, y0 + thick, height - 2*thick, counter)

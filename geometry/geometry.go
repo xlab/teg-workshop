@@ -133,6 +133,23 @@ func (r *Rect) Has(x, y float64) bool {
 	return false
 }
 
+func CheckSegmentsCrossing(p0, p1, p2, p3 *Point) bool {
+	x0, y0, x1, y1 := p0[0], p0[1], p1[0], p1[1]
+	x2, y2, x3, y3 := p2[0], p2[1], p3[0], p3[1]
+	sx1 := x1 - x0
+	sy1 := y1 - y0
+	sx2 := x3 - x2
+	sy2 := y3 - y2
+
+	s := (-sy1*(x0-x2) + sx1*(y0-y2)) / (-sx2*sy1 + sx1*sy2)
+	t := (sx2*(y0-y2) - sy2*(x0-x2)) / (-sx2*sy1 + sx1*sy2)
+
+	if s >= 0 && s <= 1 && t >= 0 && t <= 1 {
+		return true
+	}
+	return false
+}
+
 func NewCircle(x, y, r float64) *Circle {
 	return &Circle{center: &Point{x, y}, r: r}
 }
