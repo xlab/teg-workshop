@@ -63,7 +63,7 @@ type transition struct {
 }
 
 type MagicStroke struct {
-	X0, X1, Y0, Y1 float64
+	X0, Y0, X1, Y1 float64
 }
 
 func NewPlace(x float64, y float64) *place {
@@ -118,6 +118,12 @@ func (c *controlPoint) Move(x, y float64) {
 func (t *transition) Rotate() {
 	t.horizontal = !t.horizontal
 	t.Rect.Rotate(t.horizontal)
+	t.OrderArcs(true)
+	t.OrderArcs(false)
+}
+
+func (t *transition) Bound() *geometry.Rect {
+	return t.Rect
 }
 
 func (t *transition) resetProperties() {
@@ -142,7 +148,7 @@ func (p *place) resetProperties() {
 func (p *place) resetControlPoint(inbound bool) {
 	if inbound {
 		centerT := p.in.Center()
-		point := p.BorderPoint(centerT[0], centerT[1], 30.0)
+		point := p.BorderPoint(centerT[0], centerT[1], 25.0)
 		p.inControl = &controlPoint{
 			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
 			false,
@@ -198,11 +204,12 @@ type TegModel struct {
 	transitions []*transition
 	selected    map[item]bool
 
-	PlacesLen            int
-	TransitionsLen       int
-	Updated              bool // fake trigger
-	MagicStroke          *MagicStroke
-	MagicStrokeAvailable bool
+	PlacesLen       int
+	TransitionsLen  int
+	Updated         bool // fake trigger
+	MagicStroke     *MagicStroke
+	MagicStrokeUsed bool
+	MagicRectUsed   bool
 }
 
 type ControlPointSpec struct {
@@ -239,7 +246,8 @@ func (t *TegModel) updated() {
 }
 
 func (t *TegModel) updatedMagicStroke() {
-	qml.Changed(t, &t.MagicStrokeAvailable)
+	qml.Changed(t, &t.MagicStrokeUsed)
+	qml.Changed(t, &t.MagicRectUsed)
 }
 
 func (tm *TegModel) GetPlaceSpec(i int) *PlaceSpec {

@@ -23,7 +23,6 @@ ApplicationWindow {
                 text: "-"
                 onClicked: cv.zoom -= 0.2
             }
-            /*
             ToolButton {
                 text: "Rand"
                 onClicked: {
@@ -38,7 +37,6 @@ ApplicationWindow {
                     return Math.floor(Math.random() * (max - min + 1)) + min;
                 }
             }
-            */
             Rectangle {
                 width: 3
                 anchors.top: parent.top
@@ -262,7 +260,8 @@ ApplicationWindow {
         property var transitions: []
         property var arcs: []
         property var magicStroke: tegModel.magicStroke
-        property var magicStrokeAvailable: tegModel.magicStrokeAvailable
+        property var magicStrokeUsed: tegModel.magicStrokeUsed
+        property var magicRectUsed: tegModel.magicRectUsed
         property var altPressed: ctrl.modifierKeyAlt
 
         onUpdatedChanged: {

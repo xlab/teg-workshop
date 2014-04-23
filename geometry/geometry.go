@@ -126,6 +126,15 @@ func (c *Circle) Has(x, y float64) bool {
 	return math.Pow(x-c.center[0], 2)+math.Pow(y-c.center[1], 2) < math.Pow(c.r, 2)
 }
 
+func (r *Rect) Intersect(r2 *Rect) bool {
+	// http://stackoverflow.com/questions/306316/determine-if-two-rectangles-overlap-each-other
+	if r.X() < r2.X()+r2.Width() && r.X()+r.Width() > r2.X() &&
+		r.Y() < r2.Y()+r2.Height() && r.Y()+r.Height() > r2.Y() {
+		return true
+	}
+	return false
+}
+
 func (r *Rect) Has(x, y float64) bool {
 	if x >= r.corner[0] && x <= r.corner[0]+r.w && y >= r.corner[1] && y <= r.corner[1]+r.h {
 		return true

@@ -23,10 +23,34 @@ function render(cv, region, zoom, model) {
         renderArc(ctx, zoom, model.arcs[idx])
     }
 
-    if(model.magicStrokeAvailable) {
+    if(model.magicStrokeUsed && model.magicRectUsed) {
+        renderMagicRect(ctx, zoom, model.magicStroke)
+    } else if(model.magicStrokeUsed) {
         renderMagicStroke(ctx, zoom, model.magicStroke)
     }
 }
+
+function renderMagicRect(ctx, zoom, stroke) {
+    var xy0 = absCoord(ctx, stroke.x0*zoom, stroke.y0*zoom)
+    var xy2 = absCoord(ctx, stroke.x1*zoom, stroke.y1*zoom)
+    var thick = 1 * zoom
+
+    var dx = (xy2.x - xy0.x)
+    var dy = (xy2.y - xy0.y)
+    if (dx == 0 || dy == 0) {
+        return
+    }
+
+    ctx.beginPath()
+    ctx.lineWidth =  thick
+    ctx.fillStyle = "#202980b9"
+    ctx.strokeStyle = "#2980b9"
+    ctx.rect(xy0.x, xy0.y, dx, dy)
+    ctx.stroke()
+    ctx.fill()
+    ctx.reset()
+}
+
 
 function renderMagicStroke(ctx, zoom, stroke) {
     var xy0 = absCoord(ctx, stroke.x0*zoom, stroke.y0*zoom)
@@ -233,8 +257,7 @@ function renderTransition(ctx, zoom, transition) {
     if(transition.label) {
         var labelSize = 14.0 * zoom
         if(transition.horizontal) {
-            // fix horizontal text alignment
-            renderText(ctx, labelSize, x0 + w + labelSize, y0 + h/2, h, transition.label, true)
+            renderText(ctx, labelSize, x0 + w + labelSize/2, y0 + h/2, h, transition.label, true)
         } else {
             renderText(ctx, labelSize, x0, y0 + h + labelSize, w, transition.label)
         }
@@ -378,7 +401,7 @@ function calcDimensions(zoom, obj) {
 }
 
 function renderLabel(ctx, size, x0, y0, width, label) {
-    ctx.font = "" + size + "px 'PT Serif'"
+    ctx.font = "" + size + "px 'Times New Roman'"
     ctx.textAlign = "center"
     ctx.strokeText(label, x0 + width / 2, y0)
     ctx.fillText(label, x0 + width / 2, y0)
@@ -464,7 +487,7 @@ function renderText(ctx, size, x0, y0, space, text, valign) {
         var subchunks = chunks[i].split('\n')
         for(var j in subchunks) {
             var str = subchunks[j]
-            ctx.font = "oblique " + size + "px 'PT Serif'"
+            ctx.font = "oblique " + size + "px 'Times New Roman'"
             ctx.fillStyle = "#7f8c8d"
             if(valign) {
                 ctx.fillText(str, x0, y0 + space / 2 + offset)
