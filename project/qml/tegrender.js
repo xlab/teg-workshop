@@ -401,7 +401,7 @@ function calcDimensions(zoom, obj) {
 }
 
 function renderLabel(ctx, size, x0, y0, width, label) {
-    ctx.font = "" + size + "px 'Times New Roman'"
+    ctx.font = "" + size + "px 'Georgia'"
     ctx.textAlign = "center"
     ctx.strokeText(label, x0 + width / 2, y0)
     ctx.fillText(label, x0 + width / 2, y0)
@@ -487,7 +487,7 @@ function renderText(ctx, size, x0, y0, space, text, valign) {
         var subchunks = chunks[i].split('\n')
         for(var j in subchunks) {
             var str = subchunks[j]
-            ctx.font = "oblique " + size + "px 'Times New Roman'"
+            ctx.font = "oblique " + size + "px 'Georgia'"
             ctx.fillStyle = "#7f8c8d"
             if(valign) {
                 ctx.fillText(str, x0, y0 + space / 2 + offset)
