@@ -14,6 +14,7 @@ const (
 	PlaceRadius        = 25.0
 	ControlPointWidth  = 10.0
 	ControlPointHeight = 10.0
+	GridDefaultGap     = 13
 )
 
 type item interface {
@@ -28,6 +29,7 @@ type item interface {
 	Resize(w, h float64)
 	SetLabel(s string)
 	Label() string
+	Align()
 }
 
 type controlPoint struct {
@@ -40,6 +42,10 @@ func (c *controlPoint) Label() (s string) {
 }
 
 func (c *controlPoint) SetLabel(s string) {
+	return
+}
+
+func (c *controlPoint) Align() {
 	return
 }
 
@@ -74,7 +80,8 @@ func NewPlace(x float64, y float64) *place {
 
 func NewTransition(x float64, y float64) *transition {
 	return &transition{
-		Rect: geometry.NewRect(x, y, TransitionWidth, TransitionHeight),
+		Rect: geometry.NewRect(x-TransitionWidth/2, y-TransitionHeight/2,
+			TransitionWidth, TransitionHeight),
 	}
 }
 
@@ -105,6 +112,83 @@ func (t *transition) OrderArcs(inbound bool) {
 			sort.Sort(placesByY{t.out})
 		}
 	}
+}
+
+func (p *place) shiftControls(dx, dy float64) {
+	if p.in != nil {
+		if p.inControl.modified {
+			p.inControl.Shift(dx, dy)
+		} else {
+			p.resetControlPoint(true)
+		}
+	}
+
+	if p.out != nil {
+		if p.outControl.modified {
+			p.outControl.Shift(dx, dy)
+		} else {
+			p.resetControlPoint(false)
+		}
+	}
+}
+
+func (t *TegModel) shiftItem(it item, dx float64, dy float64) {
+	it.Shift(dx, dy)
+
+	if place, ok := it.(*place); ok {
+		place.shiftControls(dx, dy)
+	}
+}
+
+func (t *transition) Align() {
+	x, y := int(t.Center().X()), int(t.Center().Y())
+	dx, dy := math.Abs(float64(x%GridDefaultGap)), math.Abs(float64(y%GridDefaultGap))
+	if dx == 0 && dy == 0 {
+		return
+	}
+	sx, sy := -1.0, -1.0
+	if dx > GridDefaultGap/2.0 {
+		sx = 1.0
+		dx = GridDefaultGap - dx
+	}
+	if dy > GridDefaultGap/2.0 {
+		sy = 1.0
+		dy = GridDefaultGap - dy
+	}
+	if x < 0 {
+		dx = -dx
+	}
+	if y < 0 {
+		dy = -dy
+	}
+	t.Move(float64(x), float64(y))
+	t.Shift(sx*dx, sy*dy)
+}
+
+func (p *place) Align() {
+	x, y := int(p.Center().X()), int(p.Center().Y())
+	dx, dy := math.Abs(float64(x%GridDefaultGap)), math.Abs(float64(y%GridDefaultGap))
+	if dx == 0 && dy == 0 {
+		return
+	}
+	sx, sy := -1.0, -1.0
+	if dx > GridDefaultGap/2.0 {
+		sx = 1.0
+		dx = GridDefaultGap - dx
+	}
+	if dy > GridDefaultGap/2.0 {
+		sy = 1.0
+		dy = GridDefaultGap - dy
+	}
+	if x < 0 {
+		dx = -dx
+	}
+	if y < 0 {
+		dy = -dy
+	}
+	p.Move(float64(x), float64(y))
+	p.Shift(sx*dx, sy*dy)
+	p.shiftControls(sx*dx, sy*dy)
 }
 
 func (t *transition) Move(x, y float64) {
@@ -158,16 +242,22 @@ func (p *place) resetProperties() {
 func (p *place) resetControlPoint(inbound bool) {
 	if inbound {
 		centerT := p.in.Center()
-		point := p.BorderPoint(centerT[0], centerT[1], 25.0)
+		point := p.BorderPoint(centerT[0], centerT[1], 15.0)
 		p.inControl = &controlPoint{
-			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
+			geometry.NewRect(
+				point[0]-ControlPointWidth/2,
+				point[1]-ControlPointHeight/2,
+				ControlPointWidth, ControlPointHeight),
 			false,
 		}
 	} else {
 		centerT := p.out.Center()
-		point := p.BorderPoint(centerT[0], centerT[1], 10.0)
+		point := p.BorderPoint(centerT[0], centerT[1], 15.0)
 		p.outControl = &controlPoint{
-			geometry.NewRect(point[0], point[1], ControlPointWidth, ControlPointHeight),
+			geometry.NewRect(
+				point[0]-ControlPointWidth/2,
+				point[1]-ControlPointHeight/2,
+				ControlPointWidth, ControlPointHeight),
 			false,
 		}
 	}
@@ -275,14 +365,14 @@ func (tm *TegModel) newPlaceSpec(p *place) *PlaceSpec {
 	}
 	if p.in != nil {
 		spec.InControl = &ControlPointSpec{
-			X: p.inControl.X(),
-			Y: p.inControl.Y(),
+			X: p.inControl.Center().X(),
+			Y: p.inControl.Center().Y(),
 		}
 	}
 	if p.out != nil {
 		spec.OutControl = &ControlPointSpec{
-			X: p.outControl.X(),
-			Y: p.outControl.Y(),
+			X: p.outControl.Center().X(),
+			Y: p.outControl.Center().Y(),
 		}
 	}
 	return spec
@@ -407,6 +497,14 @@ func (t *TegModel) fakeData() {
 	p4.inControl.modified = true
 	p4.outControl.Move(-57.30078125, -109.2734375)
 	p4.outControl.modified = true
+
+	for _, p := range t.places {
+		p.Align()
+	}
+
+	for _, t := range t.transitions {
+		t.Align()
+	}
 }
 
 func (t *TegModel) deselectAll() {

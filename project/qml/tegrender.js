@@ -88,12 +88,17 @@ function renderArc(ctx, zoom, arc) {
     
     var thick = 2.0 * zoom
     
+    var pcX = xy_p.x+wh_p.w/2
+    var pcY = xy_p.y+wh_p.h/2
+    var tcX = xy_t.x+wh_t.w/2
+    var tcY = xy_t.y+wh_t.h/2
+
     // collect variables to draw transition-end of bezier
     var data_t = {
         "x": xy_t.x, "y": xy_t.y,
         "w": wh_t.w, "h": wh_t.h,
-        "cx": xy_t.x + wh_t.w/2.0,
-        "cy": xy_t.y + wh_t.h/2.0,
+        "cx": tcX,
+        "cy": tcY,
     }
     
     var count = inbound ? transition.in : transition.out
@@ -101,7 +106,7 @@ function renderArc(ctx, zoom, arc) {
     // calc the point near transition
     var xyA_t = calcBorderPointTransition(zoom, data_t, xy_c.x, xy_c.y, horizontal, thick, inbound, count, index)
     // calc the point near place
-    var xyA_p = calcBorderPointPlace(zoom, wh_p.w/2.0, xy_p.x+wh_p.w/2.0, xy_p.y+wh_p.h/2.0, xy_c.x, xy_c.y)
+    var xyA_p = calcBorderPointPlace(zoom, wh_p.w/2.0, pcX, pcY, xy_c.x, xy_c.y)
     
     // get the points to draw
     var endXYA = inbound ? xyA_t : xyA_p
@@ -139,8 +144,7 @@ function renderArc(ctx, zoom, arc) {
     
     drawPointedBezierCurve(ctx, zoom, thick, place.selected && transition.selected,
                            {"x0":xyA_p.x, "y0":xyA_p.y, "x1":xyA_t.x, "y1":xyA_t.y,
-                               "cx0":xy_c.x + wh_c.w/2, "cy0":xy_c.y + wh_c.h/2,
-                               "cx1":cp_t.x, "cy1":cp_t.y},
+                               "cx0":xy_c.x, "cy0":xy_c.y, "cx1":cp_t.x, "cy1":cp_t.y},
                            {"p1":p1, "p2":p2, "p3":p3, "p4":p4})
 
     if(model.altPressed) {
@@ -148,12 +152,14 @@ function renderArc(ctx, zoom, arc) {
         ctx.strokeStyle = "#3498db"
         ctx.lineWidth = 1.0 * zoom
         if(horizontal) {
-            ctx.moveTo(xy_p.x + wh_p.h/2, xy_p.y + wh_p.w/2)
-            ctx.lineTo(xy_c.x + wh_c.h/2, xy_c.y + wh_c.w/2)
+            ctx.moveTo(pcX, pcY)
+            ctx.lineTo(xy_c.x, xy_c.y)
+            ctx.lineTo(cp_t.x, cp_t.y)
             ctx.lineTo(xy_t.x + wh_t.h/2, xy_t.y + wh_t.w/2)
         } else {
-            ctx.moveTo(xy_p.x + wh_p.w/2, xy_p.y + wh_p.h/2)
-            ctx.lineTo(xy_c.x + wh_c.w/2, xy_c.y + wh_c.h/2)
+            ctx.moveTo(pcX, pcY)
+            ctx.lineTo(xy_c.x, xy_c.y)
+            ctx.lineTo(cp_t.x, cp_t.y)
             ctx.lineTo(xy_t.x + wh_t.w/2, xy_t.y + wh_t.h/2)
         }
 
@@ -163,7 +169,7 @@ function renderArc(ctx, zoom, arc) {
     ctx.beginPath()
     if(place.selected) {
         ctx.fillStyle = "#f1c40f"
-        ctx.rect(xy_c.x, xy_c.y, wh_c.w, wh_c.h)
+        ctx.rect(xy_c.x - wh_c.w/2, xy_c.y - wh_c.h/2, wh_c.w, wh_c.h)
         ctx.fill()
     }
     ctx.reset()
@@ -249,7 +255,7 @@ function renderTransition(ctx, zoom, transition) {
         var matR = (wh.h + 6*zoom) / 2
         // mat
         ctx.fillStyle = "#90bdc3c7"
-        ctx.ellipse(x0 + wh.w/2 - matR, y0 + wh.h/2 - matR, 2*matR, 2*matR)
+        ctx.ellipse(x0 + w/2 - matR, y0 + h/2 - matR, 2*matR, 2*matR)
         ctx.fill()
         ctx.beginPath()
     }

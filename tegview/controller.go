@@ -96,28 +96,6 @@ func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 	return
 }
 
-func (c *Ctrl) shiftItem(it item, dx float64, dy float64) {
-	it.Shift(dx, dy)
-
-	if place, ok := it.(*place); ok {
-		if place.in != nil {
-			if place.inControl.modified {
-				place.inControl.Shift(dx, dy)
-			} else {
-				place.resetControlPoint(true)
-			}
-		}
-
-		if place.out != nil {
-			if place.outControl.modified {
-				place.outControl.Shift(dx, dy)
-			} else {
-				place.resetControlPoint(false)
-			}
-		}
-	}
-}
-
 func (c *Ctrl) handleEvents() {
 	go func() {
 		var x0, y0 float64
@@ -212,49 +190,51 @@ func (c *Ctrl) handleEvents() {
 							c.model.updated()
 							continue
 						}
-						if len(c.model.selected) > 1 {
-							for it := range c.model.selected {
-								c.shiftItem(it, dx, dy)
-								if place, ok := it.(*place); ok {
-									if place.in != nil {
-										place.in.OrderArcs(false)
-										if c.ModifierKeyShift {
-											place.resetControlPoint(false)
-										}
-									}
-									if place.out != nil {
-										place.out.OrderArcs(true)
-										if c.ModifierKeyShift {
-											place.resetControlPoint(true)
-										}
-									}
-								} else if transition, ok := it.(*transition); ok {
-									transition.OrderArcs(true)
-									transition.OrderArcs(false)
-								}
-							}
-							c.model.updated()
-						} else {
-							c.shiftItem(focused, dx, dy)
-							c.model.updated()
-							if place, ok := focused.(*place); ok {
+
+						toOrder := make(map[*transition]bool, len(c.model.transitions))
+						toResetIn := make(map[*place]bool, len(c.model.places))
+						toResetOut := make(map[*place]bool, len(c.model.places))
+						for it := range c.model.selected {
+							c.model.shiftItem(it, dx, dy)
+							if place, ok := it.(*place); ok {
 								if place.in != nil {
-									place.in.OrderArcs(false)
-									if c.ModifierKeyShift {
-										place.resetControlPoint(false)
-									}
-								}
-								if place.out != nil {
-									place.out.OrderArcs(true)
+									toOrder[place.in] = true
 									if c.ModifierKeyShift {
 										place.resetControlPoint(true)
 									}
 								}
-							} else if transition, ok := focused.(*transition); ok {
-								transition.OrderArcs(true)
-								transition.OrderArcs(false)
+								if place.out != nil {
+									toOrder[place.out] = true
+									if c.ModifierKeyShift {
+										place.resetControlPoint(false)
+									}
+								}
+							} else if transition, ok := it.(*transition); ok {
+								toOrder[transition] = true
+								for _, p := range transition.out {
+									toResetIn[p] = true
+								}
+								for _, p := range transition.in {
+									toResetOut[p] = true
+								}
 							}
 						}
+						for t, _ := range toOrder {
+							t.OrderArcs(true)
+							t.OrderArcs(false)
+						}
+						for p, _ := range toResetIn {
+							if !p.inControl.modified {
+								p.resetControlPoint(true)
+							}
+						}
+						for p, _ := range toResetOut {
+							if !p.outControl.modified {
+								p.resetControlPoint(false)
+							}
+						}
+						c.model.updated()
+
 					} else {
 						c.model.MagicStroke.X1 = x
 						c.model.MagicStroke.Y1 = y
@@ -377,6 +357,10 @@ func (c *Ctrl) handleEvents() {
 								}
 							}
 						}
+					} else {
+						for it := range c.model.selected {
+							it.Align()
+						}
 					}
 
 					focused = nil
@@ -384,9 +368,6 @@ func (c *Ctrl) handleEvents() {
 					c.model.MagicRectUsed = false
 					c.model.updatedMagicStroke()
 					c.model.updated()
-
-				case EventMouseClick:
-					// unused
 
 				case EventMouseDoubleClick:
 					if c.ModifierKeyControl || c.ModifierKeyShift {
@@ -450,7 +431,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 			} else if transition, ok := it.(*transition); ok {
 				switch ev.keycode {
 				case KeyCodeF:
-					place.resetProperties()
+					transition.resetProperties()
 					updated = true
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)
@@ -460,7 +441,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 			}
 		}
 	} else {
-		// plaintext
+		// plaintext input
 		for it := range c.model.selected {
 			l := it.Label()
 			switch ev.keycode {
