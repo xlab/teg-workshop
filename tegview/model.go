@@ -125,9 +125,9 @@ func (t *transition) Rotate() {
 func (t *transition) Has(x, y float64) bool {
 	var radius float64
 	if t.horizontal {
-		radius = t.Width() / 2
+		radius = (t.Width() + 6.0) / 2
 	} else {
-		radius = t.Height() / 2
+		radius = (t.Height() + 6.0) / 2
 	}
 	return math.Pow(x-t.Center()[0], 2)+math.Pow(y-t.Center()[1], 2) < math.Pow(radius, 2)
 }

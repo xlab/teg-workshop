@@ -244,7 +244,16 @@ function renderTransition(ctx, zoom, transition) {
     var xy0 = absCoord(ctx, transition.x*zoom, transition.y*zoom)
     var x0 = xy0.x
     var y0 = xy0.y
-    
+
+    if(transition.selected) {
+        var matR = (wh.h + 6*zoom) / 2
+        // mat
+        ctx.fillStyle = "#90bdc3c7"
+        ctx.ellipse(x0 + wh.w/2 - matR, y0 + wh.h/2 - matR, 2*matR, 2*matR)
+        ctx.fill()
+        ctx.beginPath()
+    }
+
     // color of transition
     ctx.strokeStyle = transition.selected ? sel_color : def_color
     ctx.fillStyle = ctx.strokeStyle
@@ -253,6 +262,7 @@ function renderTransition(ctx, zoom, transition) {
     ctx.rect(x0, y0, w, h)
     ctx.fill()
     ctx.beginPath()
+
     
     if(transition.label) {
         var labelSize = 14.0 * zoom
