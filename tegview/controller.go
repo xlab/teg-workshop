@@ -212,7 +212,6 @@ func (c *Ctrl) handleEvents() {
 							c.model.updated()
 							continue
 						}
-
 						if len(c.model.selected) > 1 {
 							for it := range c.model.selected {
 								c.shiftItem(it, dx, dy)
@@ -235,7 +234,7 @@ func (c *Ctrl) handleEvents() {
 								}
 							}
 							c.model.updated()
-						} else if focused != nil {
+						} else {
 							c.shiftItem(focused, dx, dy)
 							c.model.updated()
 							if place, ok := focused.(*place); ok {
@@ -259,10 +258,12 @@ func (c *Ctrl) handleEvents() {
 					} else {
 						c.model.MagicStroke.X1 = x
 						c.model.MagicStroke.Y1 = y
-
-						var rect *geometry.Rect
 						dx := c.model.MagicStroke.X1 - c.model.MagicStroke.X0
 						dy := c.model.MagicStroke.Y1 - c.model.MagicStroke.Y0
+						var rect *geometry.Rect
+						if dx == 0 || dy == 0 {
+							continue
+						}
 						w, h := math.Abs(dx), math.Abs(dy)
 						if dx < 0 && dy < 0 {
 							rect = geometry.NewRect(

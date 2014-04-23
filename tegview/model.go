@@ -122,6 +122,16 @@ func (t *transition) Rotate() {
 	t.OrderArcs(false)
 }
 
+func (t *transition) Has(x, y float64) bool {
+	var radius float64
+	if t.horizontal {
+		radius = t.Width() / 2
+	} else {
+		radius = t.Height() / 2
+	}
+	return math.Pow(x-t.Center()[0], 2)+math.Pow(y-t.Center()[1], 2) < math.Pow(radius, 2)
+}
+
 func (t *transition) Bound() *geometry.Rect {
 	return t.Rect
 }
