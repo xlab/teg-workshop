@@ -99,7 +99,8 @@ func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 func (c *Ctrl) handleEvents() {
 	go func() {
 		var x0, y0 float64
-		var focused item
+		var focused interface{}
+		var copied bool
 		for {
 			switch ev := (<-c.events).(type) {
 			case *keyEvent:
@@ -110,22 +111,22 @@ func (c *Ctrl) handleEvents() {
 				switch ev.kind {
 				case EventMousePress:
 					x0, y0 = x, y
-					it, ok := c.model.findDrawable(x, y)
+					smth, found := c.model.findDrawable(x, y)
 
 					if c.ModifierKeyAlt {
-						if !ok {
+						if !found {
 							c.model.deselectAll()
-						} else {
-							focused = it
+						} else if _, cp := smth.(*controlPoint); !cp {
+							focused = smth
 							c.model.deselectAll()
-							c.model.selectItem(it)
+							c.model.selectItem(smth.(item))
 						}
 						c.model.MagicStroke.X0 = x
 						c.model.MagicStroke.Y0 = y
 						c.model.updated()
-					} else if c.ModifierKeyShift && !ok {
-						c.model.deselectAll()
+					} else if c.ModifierKeyShift && !found {
 						var it item
+						c.model.deselectAll()
 						if c.ModifierKeyControl {
 							it = c.model.addTransition(x, y)
 						} else {
@@ -133,7 +134,7 @@ func (c *Ctrl) handleEvents() {
 						}
 						c.model.selectItem(it)
 						focused = it
-					} else if !ok {
+					} else if !found {
 						if !c.ModifierKeyControl {
 							c.model.deselectAll()
 						}
@@ -141,11 +142,12 @@ func (c *Ctrl) handleEvents() {
 						c.model.MagicStroke.Y0 = y
 						c.model.updated()
 					} else {
-						x0, y0 = it.Center()[0], it.Center()[1]
-						focused = it
-						if control, ok := it.(*controlPoint); ok {
+						focused = smth
+						if control, ok := smth.(*controlPoint); ok {
 							control.modified = true
 						} else {
+							it := smth.(item)
+							x0, y0 = it.Center()[0], it.Center()[1]
 							if len(c.model.selected) > 1 {
 								if c.model.isSelected(it) && c.ModifierKeyControl {
 									c.model.deselectItem(it)
@@ -176,17 +178,77 @@ func (c *Ctrl) handleEvents() {
 						c.model.updatedMagicStroke()
 						if focused != nil {
 							// search for connect
-							if it, ok := c.model.findDrawable(x, y); ok {
-								c.model.selectItem(it)
-							} else {
+							smth, found := c.model.findDrawable(x, y)
+							if _, cp := smth.(*controlPoint); found && !cp {
+								c.model.selectItem(smth.(item))
+							} else if _, cp := focused.(*controlPoint); !found && !cp {
 								c.model.deselectAll()
-								c.model.selectItem(focused)
+								c.model.selectItem(focused.(item))
 							}
 						}
 						c.model.updated()
+					} else if c.ModifierKeyShift && !copied {
+						copied = true
+						toSelect := make(map[item]bool, len(c.model.selected))
+						toDeselect := make(map[item]bool, len(c.model.selected))
+						for it := range c.model.selected {
+							if t, ok := it.(*transition); ok {
+								tNew := t.Copy().(*transition)
+								focused = tNew
+								toSelect[tNew] = true
+								toDeselect[t] = true
+								c.model.transitions = append(c.model.transitions, tNew)
+								c.model.TransitionsLen = len(c.model.transitions)
+								for _, p := range t.in {
+									if c.model.isSelected(p) {
+										pNew := p.Copy().(*place)
+										focused = pNew
+										toSelect[pNew] = true
+										toDeselect[p] = true
+										c.model.places = append(c.model.places, pNew)
+										c.model.PlacesLen = len(c.model.places)
+										c.model.connectItems(tNew, pNew, true)
+										if p.outControl.modified {
+											pNew.outControl = newControlPoint(p.outControl.X(),
+												p.outControl.Y(), true)
+										}
+									}
+								}
+								for _, p := range t.out {
+									if c.model.isSelected(p) {
+										pNew := p.Copy().(*place)
+										focused = pNew
+										toSelect[pNew] = true
+										toDeselect[p] = true
+										c.model.places = append(c.model.places, pNew)
+										c.model.PlacesLen = len(c.model.places)
+										c.model.connectItems(tNew, pNew, false)
+										if p.inControl.modified {
+											pNew.inControl = newControlPoint(p.inControl.X(),
+												p.inControl.Y(), true)
+										}
+									}
+								}
+							}
+						}
+						for it := range toDeselect {
+							c.model.deselectItem(it)
+						}
+						for it := range c.model.selected {
+							if p, ok := it.(*place); ok {
+								pNew := p.Copy().(*place)
+								focused = pNew
+								toSelect[pNew] = true
+								c.model.places = append(c.model.places, pNew)
+								c.model.PlacesLen = len(c.model.places)
+							}
+						}
+						c.model.deselectAll()
+						c.model.selected = toSelect
+						c.model.updated()
 					} else if focused != nil {
-						if _, ok := focused.(*controlPoint); ok {
-							focused.Move(x, y)
+						if point, cp := focused.(*controlPoint); cp {
+							point.Move(x, y)
 							c.model.updated()
 							continue
 						}
@@ -199,23 +261,21 @@ func (c *Ctrl) handleEvents() {
 							if place, ok := it.(*place); ok {
 								if place.in != nil {
 									toOrder[place.in] = true
-									if c.ModifierKeyShift {
-										place.resetControlPoint(true)
-									}
 								}
 								if place.out != nil {
 									toOrder[place.out] = true
-									if c.ModifierKeyShift {
-										place.resetControlPoint(false)
-									}
 								}
 							} else if transition, ok := it.(*transition); ok {
 								toOrder[transition] = true
 								for _, p := range transition.out {
-									toResetIn[p] = true
+									if !p.inControl.modified {
+										toResetIn[p] = true
+									}
 								}
 								for _, p := range transition.in {
-									toResetOut[p] = true
+									if !p.outControl.modified {
+										toResetOut[p] = true
+									}
 								}
 							}
 						}
@@ -224,14 +284,10 @@ func (c *Ctrl) handleEvents() {
 							t.OrderArcs(false)
 						}
 						for p, _ := range toResetIn {
-							if !p.inControl.modified {
-								p.resetControlPoint(true)
-							}
+							p.resetControlPoint(true)
 						}
 						for p, _ := range toResetOut {
-							if !p.outControl.modified {
-								p.resetControlPoint(false)
-							}
+							p.resetControlPoint(false)
 						}
 						c.model.updated()
 
@@ -364,6 +420,7 @@ func (c *Ctrl) handleEvents() {
 					}
 
 					focused = nil
+					copied = false
 					c.model.MagicStrokeUsed = false
 					c.model.MagicRectUsed = false
 					c.model.updatedMagicStroke()
@@ -375,7 +432,7 @@ func (c *Ctrl) handleEvents() {
 					}
 					if focused != nil {
 						c.model.deselectAll()
-						c.model.selectItem(focused)
+						c.model.selectItem(focused.(item))
 						if transition, ok := focused.(*transition); ok {
 							transition.Rotate()
 							c.model.updated()

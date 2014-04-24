@@ -1,5 +1,6 @@
 var sel_color = "#b10000"
 var def_color = "#000000"
+var gridGap = 16
 
 var iii = 0
 function render(cv, region, zoom, model) {

@@ -14,7 +14,7 @@ const (
 	PlaceRadius        = 25.0
 	ControlPointWidth  = 10.0
 	ControlPointHeight = 10.0
-	GridDefaultGap     = 13
+	GridDefaultGap     = 16
 )
 
 type item interface {
@@ -30,23 +30,12 @@ type item interface {
 	SetLabel(s string)
 	Label() string
 	Align()
+	Copy() item
 }
 
 type controlPoint struct {
 	*geometry.Rect
 	modified bool
-}
-
-func (c *controlPoint) Label() (s string) {
-	return
-}
-
-func (c *controlPoint) SetLabel(s string) {
-	return
-}
-
-func (c *controlPoint) Align() {
-	return
 }
 
 type place struct {
@@ -72,16 +61,26 @@ type MagicStroke struct {
 	X0, Y0, X1, Y1 float64
 }
 
-func NewPlace(x float64, y float64) *place {
+func newPlace(x float64, y float64) *place {
 	return &place{
 		Circle: geometry.NewCircle(x, y, PlaceRadius),
 	}
 }
 
-func NewTransition(x float64, y float64) *transition {
+func newTransition(x float64, y float64) *transition {
 	return &transition{
 		Rect: geometry.NewRect(x-TransitionWidth/2, y-TransitionHeight/2,
 			TransitionWidth, TransitionHeight),
+	}
+}
+
+func newControlPoint(x float64, y float64, modified bool) *controlPoint {
+	return &controlPoint{
+		geometry.NewRect(
+			x-ControlPointWidth/2,
+			y-ControlPointHeight/2,
+			ControlPointWidth, ControlPointHeight),
+		modified,
 	}
 }
 
@@ -138,6 +137,23 @@ func (t *TegModel) shiftItem(it item, dx float64, dy float64) {
 	if place, ok := it.(*place); ok {
 		place.shiftControls(dx, dy)
 	}
+}
+
+func (p *place) Copy() item {
+	place := newPlace(p.Center().X(), p.Center().Y())
+	place.label = p.label
+	place.counter = p.counter
+	place.timer = p.timer
+	return item(place)
+}
+
+func (t *transition) Copy() item {
+	transition := newTransition(t.Center().X(), t.Center().Y())
+	transition.label = t.label
+	if t.horizontal {
+		transition.Rotate()
+	}
+	return item(transition)
 }
 
 func (t *transition) Align() {
@@ -243,23 +259,11 @@ func (p *place) resetControlPoint(inbound bool) {
 	if inbound {
 		centerT := p.in.Center()
 		point := p.BorderPoint(centerT[0], centerT[1], 15.0)
-		p.inControl = &controlPoint{
-			geometry.NewRect(
-				point[0]-ControlPointWidth/2,
-				point[1]-ControlPointHeight/2,
-				ControlPointWidth, ControlPointHeight),
-			false,
-		}
+		p.inControl = newControlPoint(point[0], point[1], false)
 	} else {
 		centerT := p.out.Center()
 		point := p.BorderPoint(centerT[0], centerT[1], 15.0)
-		p.outControl = &controlPoint{
-			geometry.NewRect(
-				point[0]-ControlPointWidth/2,
-				point[1]-ControlPointHeight/2,
-				ControlPointWidth, ControlPointHeight),
-			false,
-		}
+		p.outControl = newControlPoint(point[0], point[1], false)
 	}
 }
 
@@ -299,7 +303,6 @@ func (l *List) Value(i int) interface{} {
 }
 
 type TegModel struct {
-	focus       item
 	places      []*place
 	transitions []*transition
 	selected    map[item]bool
@@ -403,7 +406,7 @@ func (tm *TegModel) newTransitionSpec(t *transition) *TransitionSpec {
 }
 
 func (t *TegModel) addPlace(x, y float64) *place {
-	place := NewPlace(x, y)
+	place := newPlace(x, y)
 	t.places = append(t.places, place)
 	t.PlacesLen = len(t.places)
 	return place
@@ -425,7 +428,7 @@ func (t *TegModel) removePlace(p *place) {
 }
 
 func (t *TegModel) addTransition(x, y float64) *transition {
-	transition := NewTransition(x, y)
+	transition := newTransition(x, y)
 	t.transitions = append(t.transitions, transition)
 	t.TransitionsLen = len(t.transitions)
 	return transition
@@ -523,16 +526,6 @@ func (t *TegModel) selectItem(it item) {
 	}
 }
 
-func (t *TegModel) focusedIsPlace() bool {
-	_, ok := t.focus.(*place)
-	return ok
-}
-
-func (t *TegModel) focusedIsTransition() bool {
-	_, ok := t.focus.(*place)
-	return ok
-}
-
 func (t *TegModel) isSelected(it item) bool {
 	_, ok := t.selected[it]
 	return ok
@@ -617,16 +610,16 @@ func calcTransitionHeight(in, out int) float64 {
 		float64(out)*TransitionHeight/2.0), TransitionHeight)
 }
 
-func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
+func (t *TegModel) findDrawable(x float64, y float64) (interface{}, bool) {
 	for _, it := range t.places {
 		switch {
 		case it.Has(x, y):
 			return item(it), true
 		case t.isSelected(it):
 			if it.in != nil && it.inControl.Has(x, y) {
-				return item(it.inControl), true
+				return it.inControl, true
 			} else if it.out != nil && it.outControl.Has(x, y) {
-				return item(it.outControl), true
+				return it.outControl, true
 			}
 		}
 	}
@@ -640,7 +633,6 @@ func (t *TegModel) findDrawable(x float64, y float64) (item, bool) {
 
 func NewModel() *TegModel {
 	return &TegModel{
-		focus:       nil,
 		places:      make([]*place, 0, 256),
 		transitions: make([]*transition, 0, 256),
 		selected:    make(map[item]bool, 256),

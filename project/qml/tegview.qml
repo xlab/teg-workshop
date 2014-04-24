@@ -138,12 +138,20 @@ ApplicationWindow {
         anchors.topMargin: 15
     }
 
+    /*
+    Image {
+        anchors.fill: parent
+        fillMode: Image.Tile
+        source: "grid.png"
+    }
+    */
+
     Canvas {
         id: cv
         property real zoom: 1.0
         anchors.fill: parent
-        tileSize.height: Math.min(cv.height, cv.width)
-        tileSize.width: Math.min(cv.height, cv.width)
+        tileSize.height: 1024
+        tileSize.width: 1024
         canvasSize.height: 16536 * scale
         canvasSize.width: 16536 * scale
         canvasWindow.width: width
