@@ -134,6 +134,7 @@ func (c *Ctrl) handleEvents() {
 						}
 						c.model.selectItem(it)
 						focused = it
+						copied = true // prevent copy of item
 					} else if !found {
 						if !c.ModifierKeyControl {
 							c.model.deselectAll()
@@ -189,24 +190,24 @@ func (c *Ctrl) handleEvents() {
 						c.model.updated()
 					} else if c.ModifierKeyShift && !copied {
 						copied = true
-						toSelect := make(map[item]bool, len(c.model.selected))
-						toDeselect := make(map[item]bool, len(c.model.selected))
+						clones := make(map[item]item, len(c.model.selected)*2)
 						for it := range c.model.selected {
 							if t, ok := it.(*transition); ok {
 								tNew := t.Copy().(*transition)
 								focused = tNew
-								toSelect[tNew] = true
-								toDeselect[t] = true
+								clones[t] = tNew
 								c.model.transitions = append(c.model.transitions, tNew)
 								c.model.TransitionsLen = len(c.model.transitions)
 								for _, p := range t.in {
 									if c.model.isSelected(p) {
-										pNew := p.Copy().(*place)
-										focused = pNew
-										toSelect[pNew] = true
-										toDeselect[p] = true
-										c.model.places = append(c.model.places, pNew)
-										c.model.PlacesLen = len(c.model.places)
+										var pNew *place
+										if pNew, ok = clones[p].(*place); !ok {
+											pNew = p.Copy().(*place)
+											clones[p] = pNew
+											focused = pNew
+											c.model.places = append(c.model.places, pNew)
+											c.model.PlacesLen = len(c.model.places)
+										}
 										c.model.connectItems(tNew, pNew, true)
 										if p.outControl.modified {
 											pNew.outControl = newControlPoint(p.outControl.X(),
@@ -216,12 +217,14 @@ func (c *Ctrl) handleEvents() {
 								}
 								for _, p := range t.out {
 									if c.model.isSelected(p) {
-										pNew := p.Copy().(*place)
-										focused = pNew
-										toSelect[pNew] = true
-										toDeselect[p] = true
-										c.model.places = append(c.model.places, pNew)
-										c.model.PlacesLen = len(c.model.places)
+										var pNew *place
+										if pNew, ok = clones[p].(*place); !ok {
+											pNew = p.Copy().(*place)
+											clones[p] = pNew
+											focused = pNew
+											c.model.places = append(c.model.places, pNew)
+											c.model.PlacesLen = len(c.model.places)
+										}
 										c.model.connectItems(tNew, pNew, false)
 										if p.inControl.modified {
 											pNew.inControl = newControlPoint(p.inControl.X(),
@@ -231,20 +234,25 @@ func (c *Ctrl) handleEvents() {
 								}
 							}
 						}
-						for it := range toDeselect {
-							c.model.deselectItem(it)
+						for k := range clones {
+							c.model.deselectItem(k)
 						}
 						for it := range c.model.selected {
 							if p, ok := it.(*place); ok {
-								pNew := p.Copy().(*place)
-								focused = pNew
-								toSelect[pNew] = true
-								c.model.places = append(c.model.places, pNew)
-								c.model.PlacesLen = len(c.model.places)
+								var pNew *place
+								if pNew, ok = clones[p].(*place); !ok {
+									pNew = p.Copy().(*place)
+									clones[p] = pNew
+									focused = pNew
+									c.model.places = append(c.model.places, pNew)
+									c.model.PlacesLen = len(c.model.places)
+								}
 							}
 						}
 						c.model.deselectAll()
-						c.model.selected = toSelect
+						for _, v := range clones {
+							c.model.selectItem(v)
+						}
 						c.model.updated()
 					} else if focused != nil {
 						if point, cp := focused.(*controlPoint); cp {
@@ -414,8 +422,18 @@ func (c *Ctrl) handleEvents() {
 							}
 						}
 					} else {
+						first := true
+						var dx, dy float64
 						for it := range c.model.selected {
-							it.Align()
+							if first {
+								dx, dy = it.Align()
+								first = false
+							} else {
+								it.Shift(dx, dy)
+								if p, ok := it.(*place); ok {
+									p.shiftControls(dx, dy)
+								}
+							}
 						}
 					}
 

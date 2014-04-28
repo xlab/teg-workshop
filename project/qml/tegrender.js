@@ -1,8 +1,8 @@
 var sel_color = "#b10000"
 var def_color = "#000000"
 var gridGap = 16
+var margin = 50
 
-var iii = 0
 function render(cv, region, zoom, model) {
     var x0 = region.x
     var y0 = region.y
@@ -13,15 +13,29 @@ function render(cv, region, zoom, model) {
     ctx.clearRect(x0, y0, w, h)
 
     for(var idx in model.places) {
-        renderPlace(ctx, zoom, model.places[idx])
+        var xy = absCoord(ctx, model.places[idx].x*zoom, model.places[idx].y*zoom)
+        var dx = xy.x - region.x
+        var dy = xy.y - region.y
+        var mz = margin*zoom
+
+        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
+            renderPlace(ctx, zoom, model.places[idx])
+        }
     }
 
     for(var idx in model.transitions) {
-        renderTransition(ctx, zoom, model.transitions[idx])
+        var xy = absCoord(ctx, model.transitions[idx].x*zoom, model.transitions[idx].y*zoom)
+        var dx = xy.x - region.x
+        var dy = xy.y - region.y
+        var mz = margin*zoom
+
+        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
+            renderTransition(ctx, zoom, model.transitions[idx])
+        }
     }
 
     for(var idx in model.arcs) {
-        renderArc(ctx, zoom, model.arcs[idx])
+        renderArc(ctx, zoom, model.arcs[idx], region)
     }
 
     if(model.magicStrokeUsed && model.magicRectUsed) {
@@ -67,7 +81,7 @@ function renderMagicStroke(ctx, zoom, stroke) {
     ctx.reset()
 }
 
-function renderArc(ctx, zoom, arc) {
+function renderArc(ctx, zoom, arc, region) {
     var transition = arc.transition
     var place = arc.place
     var index = arc.index
@@ -142,11 +156,29 @@ function renderArc(ctx, zoom, arc) {
             cp_t = {"x": xyA_t.x + 50.0*zoom, "y": xyA_t.y}
         }
     }
+
+    var dpx = xyA_p.x - region.x
+    var dpy = xyA_p.y - region.y
+    var dtx = xyA_t.x - region.x
+    var dty = xyA_t.y - region.y
+    var dc1x = xy_c.x - region.x
+    var dc1y = xy_c.y - region.y
+    var dc2x = xy_c.x - region.x
+    var dc2y = xy_c.y - region.y
     
-    drawPointedBezierCurve(ctx, zoom, thick, place.selected && transition.selected,
-                           {"x0":xyA_p.x, "y0":xyA_p.y, "x1":xyA_t.x, "y1":xyA_t.y,
-                               "cx0":xy_c.x, "cy0":xy_c.y, "cx1":cp_t.x, "cy1":cp_t.y},
-                           {"p1":p1, "p2":p2, "p3":p3, "p4":p4})
+    if ( (dpx > -margin && dpy > -margin &&
+          dpx < region.width + margin && dpy < region.height + margin) ||
+            (dtx > -margin && dty > -margin &&
+             dtx < region.width + margin && dty < region.height + margin) ||
+            (dc1x > -margin && dc1y > -margin &&
+             dc1x < region.width + margin && dc1y < region.height + margin) ||
+            (dc2x > -margin && dc2y > -margin &&
+             dc2x < region.width + margin && dc2y < region.height + margin) ) {
+        drawPointedBezierCurve(ctx, zoom, thick, place.selected && transition.selected,
+                               {"x0":xyA_p.x, "y0":xyA_p.y, "x1":xyA_t.x, "y1":xyA_t.y,
+                                   "cx0":xy_c.x, "cy0":xy_c.y, "cx1":cp_t.x, "cy1":cp_t.y},
+                               {"p1":p1, "p2":p2, "p3":p3, "p4":p4})
+    }
 
     if(model.altPressed) {
         ctx.beginPath()

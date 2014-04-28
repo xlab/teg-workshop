@@ -29,7 +29,7 @@ type item interface {
 	Resize(w, h float64)
 	SetLabel(s string)
 	Label() string
-	Align()
+	Align() (float64, float64)
 	Copy() item
 }
 
@@ -156,11 +156,11 @@ func (t *transition) Copy() item {
 	return item(transition)
 }
 
-func (t *transition) Align() {
+func (t *transition) Align() (float64, float64) {
 	x, y := int(t.Center().X()), int(t.Center().Y())
 	dx, dy := math.Abs(float64(x%GridDefaultGap)), math.Abs(float64(y%GridDefaultGap))
 	if dx == 0 && dy == 0 {
-		return
+		return 0, 0
 	}
 	sx, sy := -1.0, -1.0
 	if dx > GridDefaultGap/2.0 {
@@ -179,13 +179,14 @@ func (t *transition) Align() {
 	}
 	t.Move(float64(x), float64(y))
 	t.Shift(sx*dx, sy*dy)
+	return sx * dx, sy * dy
 }
 
-func (p *place) Align() {
+func (p *place) Align() (float64, float64) {
 	x, y := int(p.Center().X()), int(p.Center().Y())
 	dx, dy := math.Abs(float64(x%GridDefaultGap)), math.Abs(float64(y%GridDefaultGap))
 	if dx == 0 && dy == 0 {
-		return
+		return 0, 0
 	}
 	sx, sy := -1.0, -1.0
 	if dx > GridDefaultGap/2.0 {
@@ -205,6 +206,7 @@ func (p *place) Align() {
 	p.Move(float64(x), float64(y))
 	p.Shift(sx*dx, sy*dy)
 	p.shiftControls(sx*dx, sy*dy)
+	return sx * dx, sy * dy
 }
 
 func (t *transition) Move(x, y float64) {
