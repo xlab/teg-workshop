@@ -44,6 +44,29 @@ func (c *Circle) Y() float64 {
 	return c.center[1] - c.r
 }
 
+func Align(x, y, gap int) (shiftX, shiftY float64) {
+	dx, dy := math.Abs(float64(x%gap)), math.Abs(float64(y%gap))
+	if dx == 0 && dy == 0 {
+		return 0, 0
+	}
+	sx, sy := -1.0, -1.0
+	if dx > float64(gap)/2.0 {
+		sx = 1.0
+		dx = float64(gap) - dx
+	}
+	if dy > float64(gap)/2.0 {
+		sy = 1.0
+		dy = float64(gap) - dy
+	}
+	if x < 0 {
+		dx = -dx
+	}
+	if y < 0 {
+		dy = -dy
+	}
+	return sx * dx, sy * dy
+}
+
 func (c *Circle) BorderPoint(x, y, distance float64) *Point {
 	angle := math.Atan2(x-c.center[0], y-c.center[1])
 	dX := (c.r + distance) * math.Sin(angle)

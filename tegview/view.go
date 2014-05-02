@@ -5,14 +5,14 @@ import "gopkg.in/qml.v0"
 type View struct {
 	engine  *qml.Engine
 	win     *qml.Window
-	model   *TegModel
+	model   *teg
 	control *Ctrl
 	closed  chan struct{}
 }
 
 func NewView(engine *qml.Engine) *View {
-	model := NewModel()
-	engine.Context().SetVar("tegModel", model)
+	model := newTeg()
+	engine.Context().SetVar("baseTeg", model)
 	qml.RegisterTypes("TegView", 1, 0, []qml.TypeSpec{
 		{
 			Init: func(ctrl *Ctrl, obj qml.Object) {

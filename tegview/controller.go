@@ -32,6 +32,10 @@ const (
 	KeyCodeF = 70
 	KeyCodeG = 71
 	KeyCodeT = 84
+	KeyCodeJ = 74
+	KeyCodeN = 78
+	KeyCodeK = 75
+	KeyCodeM = 77
 )
 
 type mouseEvent struct {
@@ -59,7 +63,7 @@ type Ctrl struct {
 	ModifierKeyShift   bool
 	ModifierKeyAlt     bool
 
-	model  *TegModel
+	model  *teg
 	events chan interface{}
 	mode   int
 }
@@ -148,7 +152,7 @@ func (c *Ctrl) handleEvents() {
 							control.modified = true
 						} else {
 							it := smth.(item)
-							x0, y0 = it.Center()[0], it.Center()[1]
+							//x0, y0 = it.Center()[0], it.Center()[1]
 							if len(c.model.selected) > 1 {
 								if c.model.isSelected(it) && c.ModifierKeyControl {
 									c.model.deselectItem(it)
@@ -190,65 +194,7 @@ func (c *Ctrl) handleEvents() {
 						c.model.updated()
 					} else if c.ModifierKeyShift && !copied {
 						copied = true
-						clones := make(map[item]item, len(c.model.selected)*2)
-						for it := range c.model.selected {
-							if t, ok := it.(*transition); ok {
-								tNew := t.Copy().(*transition)
-								focused = tNew
-								clones[t] = tNew
-								c.model.transitions = append(c.model.transitions, tNew)
-								c.model.TransitionsLen = len(c.model.transitions)
-								for _, p := range t.in {
-									if c.model.isSelected(p) {
-										var pNew *place
-										if pNew, ok = clones[p].(*place); !ok {
-											pNew = p.Copy().(*place)
-											clones[p] = pNew
-											focused = pNew
-											c.model.places = append(c.model.places, pNew)
-											c.model.PlacesLen = len(c.model.places)
-										}
-										c.model.connectItems(tNew, pNew, true)
-										if p.outControl.modified {
-											pNew.outControl = newControlPoint(p.outControl.X(),
-												p.outControl.Y(), true)
-										}
-									}
-								}
-								for _, p := range t.out {
-									if c.model.isSelected(p) {
-										var pNew *place
-										if pNew, ok = clones[p].(*place); !ok {
-											pNew = p.Copy().(*place)
-											clones[p] = pNew
-											focused = pNew
-											c.model.places = append(c.model.places, pNew)
-											c.model.PlacesLen = len(c.model.places)
-										}
-										c.model.connectItems(tNew, pNew, false)
-										if p.inControl.modified {
-											pNew.inControl = newControlPoint(p.inControl.X(),
-												p.inControl.Y(), true)
-										}
-									}
-								}
-							}
-						}
-						for k := range clones {
-							c.model.deselectItem(k)
-						}
-						for it := range c.model.selected {
-							if p, ok := it.(*place); ok {
-								var pNew *place
-								if pNew, ok = clones[p].(*place); !ok {
-									pNew = p.Copy().(*place)
-									clones[p] = pNew
-									focused = pNew
-									c.model.places = append(c.model.places, pNew)
-									c.model.PlacesLen = len(c.model.places)
-								}
-							}
-						}
+						clones := c.model.cloneItems(c.model.selected)
 						c.model.deselectAll()
 						for _, v := range clones {
 							c.model.selectItem(v)
@@ -298,7 +244,6 @@ func (c *Ctrl) handleEvents() {
 							p.resetControlPoint(false)
 						}
 						c.model.updated()
-
 					} else {
 						c.model.MagicStroke.X1 = x
 						c.model.MagicStroke.Y1 = y
@@ -472,21 +417,39 @@ func (c *Ctrl) handleEvents() {
 	}()
 }
 
+func (c *Ctrl) groupItems(items map[item]bool) {
+	group := c.model.addGroup(items)
+	c.model.deselectAll()
+	for it := range items {
+		group.model.selected[it] = true
+	}
+}
+
 func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	var updated bool
+	// log.Printf("key: %v (%v)", ev.keycode, ev.text)
 	if c.ModifierKeyControl {
+		switch ev.keycode {
+		case KeyCodeG:
+			if len(c.model.selected) > 0 {
+				c.groupItems(c.model.selected)
+				c.model.updated()
+			}
+			return
+		}
+
 		for it := range c.model.selected {
 			if place, ok := it.(*place); ok {
 				switch ev.keycode {
-				case KeyCodeD:
+				case KeyCodeJ:
 					place.counter++
-				case KeyCodeC:
+				case KeyCodeN:
 					place.counter--
 				case KeyCodeF:
 					place.resetProperties()
-				case KeyCodeT:
+				case KeyCodeK:
 					place.timer++
-				case KeyCodeG:
+				case KeyCodeM:
 					place.timer--
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)

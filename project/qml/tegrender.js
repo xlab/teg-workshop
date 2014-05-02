@@ -11,38 +11,57 @@ function render(cv, region, zoom, model) {
     var ctx = cv.getContext("2d")
     
     ctx.clearRect(x0, y0, w, h)
-
-    for(var idx in model.places) {
-        var xy = absCoord(ctx, model.places[idx].x*zoom, model.places[idx].y*zoom)
-        var dx = xy.x - region.x
-        var dy = xy.y - region.y
-        var mz = margin*zoom
-
-        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
-            renderPlace(ctx, zoom, model.places[idx])
-        }
-    }
-
-    for(var idx in model.transitions) {
-        var xy = absCoord(ctx, model.transitions[idx].x*zoom, model.transitions[idx].y*zoom)
-        var dx = xy.x - region.x
-        var dy = xy.y - region.y
-        var mz = margin*zoom
-
-        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
-            renderTransition(ctx, zoom, model.transitions[idx])
-        }
-    }
-
-    for(var idx in model.arcs) {
-        renderArc(ctx, zoom, model.arcs[idx], region)
-    }
+    renderItems(ctx, region, zoom, model.data)
 
     if(model.magicStrokeUsed && model.magicRectUsed) {
         renderMagicRect(ctx, zoom, model.magicStroke)
     } else if(model.magicStrokeUsed) {
         renderMagicStroke(ctx, zoom, model.magicStroke)
     }
+}
+
+function renderItems(ctx, region, zoom, data) {
+    for(var idx in data.groups) {
+        renderGroup(ctx, region, zoom, data.groups[idx])
+    }
+
+    for(var idx in data.places) {
+        var xy = absCoord(ctx, data.places[idx].x*zoom, data.places[idx].y*zoom)
+        var dx = xy.x - region.x
+        var dy = xy.y - region.y
+        var mz = margin*zoom
+
+        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
+            renderPlace(ctx, zoom, data.places[idx])
+        }
+    }
+
+    for(var idx in data.transitions) {
+        var xy = absCoord(ctx, data.transitions[idx].x*zoom, data.transitions[idx].y*zoom)
+        var dx = xy.x - region.x
+        var dy = xy.y - region.y
+        var mz = margin*zoom
+
+        if (dx > -mz && dy > -mz && dx < region.width + mz && dy < region.height + mz) {
+            renderTransition(ctx, zoom, data.transitions[idx])
+        }
+    }
+
+    for(var idx in data.arcs) {
+        renderArc(ctx, region, zoom, data.arcs[idx])
+    }
+}
+
+function renderGroup(ctx, region, zoom, group) {
+    var xy = absCoord(ctx, group.x*zoom, group.y*zoom)
+
+    var cR = 10.0 * zoom
+    ctx.fillStyle = "#b4b4b4"
+    ctx.roundedRect(xy.x, xy.y, group.width * zoom, group.height * zoom, cR, cR)
+    ctx.stroke()
+    ctx.reset()
+
+    renderItems(ctx, region, zoom, group.data)
 }
 
 function renderMagicRect(ctx, zoom, stroke) {
@@ -81,7 +100,7 @@ function renderMagicStroke(ctx, zoom, stroke) {
     ctx.reset()
 }
 
-function renderArc(ctx, zoom, arc, region) {
+function renderArc(ctx, region, zoom, arc) {
     var transition = arc.transition
     var place = arc.place
     var index = arc.index

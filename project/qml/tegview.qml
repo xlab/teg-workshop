@@ -154,6 +154,7 @@ ApplicationWindow {
         canvasSize.width: 16536 * scale
         canvasWindow.width: width
         canvasWindow.height: height
+        tileSize: "1024x1024"
         onPaint: Renderer.render(cv, region, zoom, model)
 
 
@@ -261,37 +262,15 @@ ApplicationWindow {
 
     Item {
         id: model
-        property var updated: tegModel.updated
-        property var places: []
-        property var transitions: []
-        property var arcs: []
-        property var magicStroke: tegModel.magicStroke
-        property var magicStrokeUsed: tegModel.magicStrokeUsed
-        property var magicRectUsed: tegModel.magicRectUsed
+        property var data
+        property var updated: baseTeg.updated
+        property var magicStroke: baseTeg.magicStroke
+        property var magicStrokeUsed: baseTeg.magicStrokeUsed
+        property var magicRectUsed: baseTeg.magicRectUsed
         property var altPressed: ctrl.modifierKeyAlt
 
         onUpdatedChanged: {
-            places = []
-            transitions = []
-            arcs = []
-
-            for(var i = 0; i < tegModel.placesLen; i++) {
-                places[i] = preparePlaceSpec(tegModel.getPlaceSpec(i))
-            }
-            for(var i = 0; i < tegModel.transitionsLen; i++) {
-                var spec = tegModel.getTransitionSpec(i)
-                var arcspecs = spec.arcSpecs
-                transitions[i] = prepareTransitionSpec(spec)
-
-                for(var j = 0; j < arcspecs.length; ++j){
-                    var a = arcspecs.value(j)
-                    arcs.push({
-                                  "place": preparePlaceSpec(a.place), "transition": transitions[i],
-                                  "index": a.index, "inbound": a.inbound,
-                              })
-                }
-            }
-
+            model.data = prepareModel(baseTeg)
             cv.requestPaint()
         }
 
@@ -312,6 +291,38 @@ ApplicationWindow {
                 "transition": true, "selected": spec.selected, "horizontal": spec.horizontal,
                 "label": spec.label
             }
+        }
+
+        function prepareGroupSpec(spec) {
+            return {
+                "x": spec.x, "y": spec.y, "collapsed": spec.collapsed,
+                "selected": spec.selected, "label": spec.label, data: prepareModel(spec.model),
+                "width": spec.width, "height": spec.height,
+            }
+        }
+
+        function prepareModel(m) {
+            var data = {"transitions": [], "places": [], "arcs": [], "groups": []}
+
+            for(var i = 0; i < m.placesLen; i++) {
+                data.places[i] = preparePlaceSpec(m.getPlaceSpec(i))
+            }
+            for(var i = 0; i < m.groupsLen; i++) {
+                data.groups[i] = prepareGroupSpec(m.getGroupSpec(i))
+            }
+            for(var i = 0; i < m.transitionsLen; i++) {
+                var spec = m.getTransitionSpec(i)
+                var arcspecs = spec.arcSpecs
+                data.transitions[i] = prepareTransitionSpec(spec)
+
+                for(var j = 0; j < arcspecs.length; ++j){
+                    var a = arcspecs.value(j)
+                    data.arcs.push({"place": preparePlaceSpec(a.place), "transition": data.transitions[i],
+                                       "index": a.index, "inbound": a.inbound})
+                }
+            }
+
+            return data
         }
     }
 }
