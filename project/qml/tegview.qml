@@ -2,7 +2,7 @@ import QtQuick 2.0
 import QtQuick.Controls 1.1
 import QtQuick.Layouts 1.1
 import TegView 1.0
-import 'tegrender.js' as Renderer
+import 'tegrender.js' as R
 
 ApplicationWindow {
     id: view
@@ -22,20 +22,6 @@ ApplicationWindow {
             ToolButton {
                 text: "-"
                 onClicked: cv.zoom -= 0.2
-            }
-            ToolButton {
-                text: "Rand"
-                onClicked: {
-                    for(var p in model.places) {
-                        model.places[p].counter = rand(0,12)
-                        model.places[p].timer = rand(0,12)
-                        cv.requestPaint()
-                    }
-                }
-
-                function rand(min, max) {
-                    return Math.floor(Math.random() * (max - min + 1)) + min;
-                }
             }
             Rectangle {
                 width: 3
@@ -150,13 +136,36 @@ ApplicationWindow {
         id: cv
         property real zoom: 1.0
         anchors.fill: parent
-        canvasSize.height: 16536 * scale
-        canvasSize.width: 16536 * scale
+        canvasSize.width: 16536
+        canvasSize.height: 16536
         canvasWindow.width: width
         canvasWindow.height: height
         tileSize: "1024x1024"
-        onPaint: Renderer.render(cv, region, zoom, model)
+        onPaint: {
+            var ctx = cv.getContext("2d")
+            if(!renderer.cache) {
+                console.error("error: cache broken")
+                return
+            }
+            R.render(ctx, region, renderer.cache)
+        }
 
+        property real w
+        property real h
+        onCanvasWindowChanged: {
+            if(canvasWindow.width != w || canvasWindow.height != h) {
+                w = canvasWindow.width
+                h = canvasWindow.height
+                ctrl.flush()
+            }
+        }
+
+        function absCoords(x, y){
+            return {
+                "x":cv.canvasSize.width / 2 + cv.canvasWindow.width / 2 + x,
+                "y":cv.canvasSize.height / 2 + cv.canvasWindow.height / 2 + y,
+            }
+        }
 
         Component.onCompleted: {
             canvasWindow.x = canvasSize.width / 2
@@ -165,7 +174,7 @@ ApplicationWindow {
         }
 
         onZoomChanged: {
-            cv.requestPaint()
+            ctrl.flush()
         }
 
         focus: true
@@ -194,7 +203,7 @@ ApplicationWindow {
 
             keyHint.setText("")
             event.accepted = true
-            cv.requestPaint()
+            ctrl.flush()
         }
 
         MouseArea {
@@ -255,74 +264,147 @@ ApplicationWindow {
         Timer {
             id: coldstart
             interval: 1000
-            onTriggered: cv.requestPaint()
+            onTriggered: ctrl.flush()
             repeat: false
         }
     }
 
     Item {
-        id: model
-        property var data
-        property var updated: baseTeg.updated
-        property var magicStroke: baseTeg.magicStroke
-        property var magicStrokeUsed: baseTeg.magicStrokeUsed
-        property var magicRectUsed: baseTeg.magicRectUsed
-        property var altPressed: ctrl.modifierKeyAlt
+        id: renderer
+        property var screen: tegRenderer.screen
+        property var cache
 
-        onUpdatedChanged: {
-            model.data = prepareModel(baseTeg)
+        onScreenChanged: {
+            var cache = prepareCache(screen)
+            if(!cache) return
+            renderer.cache = cache
             cv.requestPaint()
         }
 
-        function preparePlaceSpec(spec) {
-            return {
-                "x": spec.x, "y": spec.y,
-                "place": true, "selected": spec.selected,
-                "counter": spec.counter, "timer": spec.timer,
-                "in_control": spec.inControl ? {"x": spec.inControl.x, "y": spec.inControl.y} : undefined,
-                "out_control": spec.outControl ? {"x": spec.outControl.x, "y": spec.outControl.y} : undefined,
-                "label": spec.label
+        function prepareCache(screen) {
+            var cache = {
+                "circle": [], "rect": [], "line": [],
+                "bezier": [], "poly": [], "text": [], "chain": []
             }
-        }
+            var i, j, buf, it, pos, style, points
 
-        function prepareTransitionSpec(spec) {
-            return {
-                "x": spec.x, "y": spec.y, "in": spec.in, "out": spec.out,
-                "transition": true, "selected": spec.selected, "horizontal": spec.horizontal,
-                "label": spec.label
-            }
-        }
-
-        function prepareGroupSpec(spec) {
-            return {
-                "x": spec.x, "y": spec.y, "collapsed": spec.collapsed,
-                "selected": spec.selected, "label": spec.label, data: prepareModel(spec.model),
-                "width": spec.width, "height": spec.height,
-            }
-        }
-
-        function prepareModel(m) {
-            var data = {"transitions": [], "places": [], "arcs": [], "groups": []}
-
-            for(var i = 0; i < m.placesLen; i++) {
-                data.places[i] = preparePlaceSpec(m.getPlaceSpec(i))
-            }
-            for(var i = 0; i < m.groupsLen; i++) {
-                data.groups[i] = prepareGroupSpec(m.getGroupSpec(i))
-            }
-            for(var i = 0; i < m.transitionsLen; i++) {
-                var spec = m.getTransitionSpec(i)
-                var arcspecs = spec.arcSpecs
-                data.transitions[i] = prepareTransitionSpec(spec)
-
-                for(var j = 0; j < arcspecs.length; ++j){
-                    var a = arcspecs.value(j)
-                    data.arcs.push({"place": preparePlaceSpec(a.place), "transition": data.transitions[i],
-                                       "index": a.index, "inbound": a.inbound})
+            buf = screen.circles
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.circle[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "x": it.x, "y": it.y, "d": it.d
                 }
             }
 
-            return data
+            buf = screen.rects
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.rect[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "x": it.x, "y": it.y, "w": it.w, "h": it.h
+                }
+            }
+
+            buf = screen.lines
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.line[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "start": it.start, "end": it.end
+                }
+            }
+
+            buf = screen.texts
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.text[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "align": it.align, "fontSize": it.fontSize,
+                    "oblique": it.oblique, "font": it.font,
+                    "x": it.x, "y": it.y, "label": it.label,
+                }
+            }
+
+            buf = screen.bezier
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.bezier[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "start": it.start, "end": it.end, "c1": it.c1, "c2": it.c2
+                }
+            }
+
+
+            buf = screen.polys
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                points = []
+                for(j = 0; j < it.length; ++j) {
+                    points[j] = it.at(j)
+                }
+                cache.poly[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "points": points
+                }
+            }
+
+            buf = screen.chains
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                points = []
+                for(j = 0; j < it.length; ++j) {
+                    points[j] = it.at(j)
+                }
+                cache.chain[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "points": points
+                }
+            }
+
+            return cache
         }
     }
 }

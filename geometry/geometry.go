@@ -2,8 +2,16 @@ package geometry
 
 import "math"
 
-type Point [2]float64
-type Line [2]*Point
+type Point struct {
+	X, Y float64
+}
+
+func (p *Point) Rotate(o *Point, angle float64) *Point {
+	return &Point{
+		o.X + (p.X-o.X)*math.Cos(angle) - (p.Y-o.Y)*math.Sin(angle),
+		o.Y + (p.X-o.X)*math.Sin(angle) + (p.Y-o.Y)*math.Cos(angle),
+	}
+}
 
 type Rect struct {
 	corner *Point
@@ -14,34 +22,34 @@ type Circle struct {
 	r      float64
 }
 
-func (p *Point) X() float64 {
-	return p[0]
-}
-
-func (p *Point) Y() float64 {
-	return p[1]
-}
-
 func (r *Rect) X() float64 {
-	return r.corner[0]
+	return r.corner.X
 }
 
 func (r *Rect) Y() float64 {
-	return r.corner[1]
+	return r.corner.Y
+}
+
+func (r *Rect) Corner() *Point {
+	return r.corner
 }
 
 func (r *Rect) Rotate(horizontal bool) {
-	r.corner[0] -= (r.h - r.w) / 2
-	r.corner[1] += (r.h - r.w) / 2
+	r.corner.X -= (r.h - r.w) / 2
+	r.corner.Y += (r.h - r.w) / 2
 	r.w, r.h = r.h, r.w
 }
 
 func (c *Circle) X() float64 {
-	return c.center[0] - c.r
+	return c.center.X - c.r
 }
 
 func (c *Circle) Y() float64 {
-	return c.center[1] - c.r
+	return c.center.Y - c.r
+}
+
+func (c *Circle) Corner() *Point {
+	return &Point{c.center.X - c.r, c.center.Y - c.r}
 }
 
 func Align(x, y, gap int) (shiftX, shiftY float64) {
@@ -68,39 +76,39 @@ func Align(x, y, gap int) (shiftX, shiftY float64) {
 }
 
 func (c *Circle) BorderPoint(x, y, distance float64) *Point {
-	angle := math.Atan2(x-c.center[0], y-c.center[1])
+	angle := math.Atan2(x-c.center.X, y-c.center.Y)
 	dX := (c.r + distance) * math.Sin(angle)
 	dY := (c.r + distance) * math.Cos(angle)
-	return &Point{c.center[0] + dX, c.center[1] + dY}
+	return &Point{c.center.X + dX, c.center.Y + dY}
 }
 
 func (p *Point) Move(x, y float64) {
-	p[0], p[1] = x, y
+	p.X, p.Y = x, y
 }
 
 func (p *Point) Shift(dx, dy float64) {
-	p[0] += dx
-	p[1] += dy
+	p.X += dx
+	p.Y += dy
 }
 
 func (r *Rect) Move(x, y float64) {
-	r.corner[0] = x
-	r.corner[1] = y
+	r.corner.X = x
+	r.corner.Y = y
 }
 
 func (r *Rect) Shift(dx, dy float64) {
-	r.corner[0] += dx
-	r.corner[1] += dy
+	r.corner.X += dx
+	r.corner.Y += dy
 }
 
 func (c *Circle) Move(x, y float64) {
-	c.center[0] = x
-	c.center[1] = y
+	c.center.X = x
+	c.center.Y = y
 }
 
 func (c *Circle) Shift(dx, dy float64) {
-	c.center[0] += dx
-	c.center[1] += dy
+	c.center.X += dx
+	c.center.Y += dy
 }
 
 func (c *Circle) Resize(w, h float64) {
@@ -121,8 +129,8 @@ func (r *Rect) Height() float64 {
 
 func (r *Rect) Center() *Point {
 	return &Point{
-		r.corner[0] + r.w/2,
-		r.corner[1] + r.h/2,
+		r.corner.X + r.w/2,
+		r.corner.Y + r.h/2,
 	}
 }
 
@@ -140,13 +148,13 @@ func (c *Circle) Center() *Point {
 
 func (c *Circle) Bound() *Rect {
 	return NewRect(
-		c.center[0]-c.r,
-		c.center[1]-c.r,
+		c.center.X-c.r,
+		c.center.Y-c.r,
 		c.r*2, c.r*2)
 }
 
 func (c *Circle) Has(x, y float64) bool {
-	return math.Pow(x-c.center[0], 2)+math.Pow(y-c.center[1], 2) < math.Pow(c.r, 2)
+	return math.Pow(x-c.center.X, 2)+math.Pow(y-c.center.Y, 2) < math.Pow(c.r, 2)
 }
 
 func (r *Rect) Intersect(r2 *Rect) bool {
@@ -159,15 +167,15 @@ func (r *Rect) Intersect(r2 *Rect) bool {
 }
 
 func (r *Rect) Has(x, y float64) bool {
-	if x >= r.corner[0] && x <= r.corner[0]+r.w && y >= r.corner[1] && y <= r.corner[1]+r.h {
+	if x >= r.corner.X && x <= r.corner.X+r.w && y >= r.corner.Y && y <= r.corner.Y+r.h {
 		return true
 	}
 	return false
 }
 
 func CheckSegmentsCrossing(p0, p1, p2, p3 *Point) bool {
-	x0, y0, x1, y1 := p0[0], p0[1], p1[0], p1[1]
-	x2, y2, x3, y3 := p2[0], p2[1], p3[0], p3[1]
+	x0, y0, x1, y1 := p0.X, p0.Y, p1.X, p1.Y
+	x2, y2, x3, y3 := p2.X, p2.Y, p3.X, p3.Y
 	sx1 := x1 - x0
 	sy1 := y1 - y0
 	sx2 := x3 - x2
@@ -186,26 +194,10 @@ func NewCircle(x, y, r float64) *Circle {
 	return &Circle{center: &Point{x, y}, r: r}
 }
 
-func NewPoint(x, y float64) *Point {
-	return &Point{x, y}
-}
-
 func NewRect(x, y, width, height float64) *Rect {
 	return &Rect{
 		corner: &Point{x, y},
 		w:      width,
 		h:      height,
 	}
-}
-
-func (l *Line) Start() *Point {
-	return l[0]
-}
-
-func (l *Line) End() *Point {
-	return l[1]
-}
-
-func NewLine(x0, y0, x1, y1 float64) *Line {
-	return &Line{&Point{x0, y0}, &Point{x1, y1}}
 }

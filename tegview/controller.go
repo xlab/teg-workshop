@@ -63,9 +63,9 @@ type Ctrl struct {
 	ModifierKeyShift   bool
 	ModifierKeyAlt     bool
 
+	mode   int
 	model  *teg
 	events chan interface{}
-	mode   int
 }
 
 func (c *Ctrl) KeyPressed(keycode int, text string) {
@@ -100,6 +100,10 @@ func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 	return
 }
 
+func (c *Ctrl) Flush() {
+	c.model.update()
+}
+
 func (c *Ctrl) handleEvents() {
 	go func() {
 		var x0, y0 float64
@@ -120,14 +124,14 @@ func (c *Ctrl) handleEvents() {
 					if c.ModifierKeyAlt {
 						if !found {
 							c.model.deselectAll()
+							c.model.update()
 						} else if _, cp := smth.(*controlPoint); !cp {
 							focused = smth
 							c.model.deselectAll()
 							c.model.selectItem(smth.(item))
+							c.model.update()
 						}
-						c.model.MagicStroke.X0 = x
-						c.model.MagicStroke.Y0 = y
-						c.model.updated()
+						c.model.util.min = &geometry.Point{x, y}
 					} else if c.ModifierKeyShift && !found {
 						var it item
 						c.model.deselectAll()
@@ -142,17 +146,16 @@ func (c *Ctrl) handleEvents() {
 					} else if !found {
 						if !c.ModifierKeyControl {
 							c.model.deselectAll()
+							c.model.update()
 						}
-						c.model.MagicStroke.X0 = x
-						c.model.MagicStroke.Y0 = y
-						c.model.updated()
+						c.model.util.min = &geometry.Point{x, y}
 					} else {
 						focused = smth
 						if control, ok := smth.(*controlPoint); ok {
 							control.modified = true
 						} else {
 							it := smth.(item)
-							//x0, y0 = it.Center()[0], it.Center()[1]
+							//x0, y0 = it.Center().X, it.Center().Y
 							if len(c.model.selected) > 1 {
 								if c.model.isSelected(it) && c.ModifierKeyControl {
 									c.model.deselectItem(it)
@@ -169,20 +172,16 @@ func (c *Ctrl) handleEvents() {
 								c.model.selectItem(it)
 							}
 						}
-						c.model.updated()
+						c.model.update()
 					}
 				case EventMouseMove:
 					dx, dy := x-x0, y-y0
 					x0, y0 = x, y
 
 					if c.ModifierKeyAlt {
-						c.model.MagicStroke.X1 = x
-						c.model.MagicStroke.Y1 = y
-						c.model.MagicStrokeUsed = true
-						c.model.MagicRectUsed = false
-						c.model.updatedMagicStroke()
+						c.model.util.kind = UtilStroke
+						c.model.util.max = &geometry.Point{x, y}
 						if focused != nil {
-							// search for connect
 							smth, found := c.model.findDrawable(x, y)
 							if _, cp := smth.(*controlPoint); found && !cp {
 								c.model.selectItem(smth.(item))
@@ -191,7 +190,7 @@ func (c *Ctrl) handleEvents() {
 								c.model.selectItem(focused.(item))
 							}
 						}
-						c.model.updated()
+						c.model.update()
 					} else if c.ModifierKeyShift && !copied {
 						copied = true
 						clones := c.model.cloneItems(c.model.selected)
@@ -199,11 +198,11 @@ func (c *Ctrl) handleEvents() {
 						for _, v := range clones {
 							c.model.selectItem(v)
 						}
-						c.model.updated()
+						c.model.update()
 					} else if focused != nil {
 						if point, cp := focused.(*controlPoint); cp {
 							point.Move(x, y)
-							c.model.updated()
+							c.model.update()
 							continue
 						}
 
@@ -243,12 +242,12 @@ func (c *Ctrl) handleEvents() {
 						for p, _ := range toResetOut {
 							p.resetControlPoint(false)
 						}
-						c.model.updated()
+						c.model.update()
 					} else {
-						c.model.MagicStroke.X1 = x
-						c.model.MagicStroke.Y1 = y
-						dx := c.model.MagicStroke.X1 - c.model.MagicStroke.X0
-						dy := c.model.MagicStroke.Y1 - c.model.MagicStroke.Y0
+						c.model.util.kind = UtilRect
+						c.model.util.max = &geometry.Point{x, y}
+						dx := c.model.util.max.X - c.model.util.min.X
+						dy := c.model.util.max.Y - c.model.util.min.Y
 						var rect *geometry.Rect
 						if dx == 0 || dy == 0 {
 							continue
@@ -256,26 +255,26 @@ func (c *Ctrl) handleEvents() {
 						w, h := math.Abs(dx), math.Abs(dy)
 						if dx < 0 && dy < 0 {
 							rect = geometry.NewRect(
-								c.model.MagicStroke.X1,
-								c.model.MagicStroke.Y1,
+								c.model.util.max.X,
+								c.model.util.max.Y,
 								w, h,
 							)
 						} else if dx < 0 /* && dy > 0 */ {
 							rect = geometry.NewRect(
-								c.model.MagicStroke.X1,
-								c.model.MagicStroke.Y1-h,
+								c.model.util.max.X,
+								c.model.util.max.Y-h,
 								w, h,
 							)
 						} else if dx > 0 && dy < 0 {
 							rect = geometry.NewRect(
-								c.model.MagicStroke.X1-w,
-								c.model.MagicStroke.Y1,
+								c.model.util.max.X-w,
+								c.model.util.max.Y,
 								w, h,
 							)
 						} else /* dx > 0 && dy > 0 */ {
 							rect = geometry.NewRect(
-								c.model.MagicStroke.X0,
-								c.model.MagicStroke.Y0,
+								c.model.util.min.X,
+								c.model.util.min.Y,
 								w, h,
 							)
 						}
@@ -293,76 +292,72 @@ func (c *Ctrl) handleEvents() {
 								c.model.deselectItem(t)
 							}
 						}
-						if !c.model.MagicRectUsed {
-							c.model.MagicStrokeUsed = true
-							c.model.MagicRectUsed = true
-							c.model.updatedMagicStroke()
-						}
-						c.model.updated()
+						c.model.update()
 					}
 
 				case EventMouseRelease:
-					if c.ModifierKeyAlt && c.model.MagicStrokeUsed {
+					if c.ModifierKeyAlt && c.model.util.kind == UtilStroke {
 						if it, ok := c.model.findDrawable(x, y); focused != nil && focused != it && ok {
 							if p, ok := it.(*place); ok && p.in == nil {
 								if t, ok := focused.(*transition); ok {
-									c.model.connectItems(t, p, false)
+									t.link(p, false)
 								} else if p2, ok := focused.(*place); ok && p2.out == nil {
 									// p -- p2, new transition between
 									pCenter, p2Center := p.Center(), p2.Center()
-									t := c.model.addTransition((pCenter[0]+p2Center[0])/2,
-										(pCenter[1]+p2Center[1])/2)
-									c.model.connectItems(t, p2, true)
-									c.model.connectItems(t, p, false)
+									t := c.model.addTransition((pCenter.X+p2Center.X)/2,
+										(pCenter.Y+p2Center.Y)/2)
+									t.link(p2, true)
+									t.link(p, false)
 								} else {
-									log.Println("Unable to connect smth to place")
+									log.Println("Unable to link smth to place")
 								}
 							} else if t, ok := it.(*transition); ok {
 								if p, ok := focused.(*place); ok {
-									c.model.connectItems(t, p, true)
+									t.link(p, true)
 								} else if t2, ok := focused.(*transition); ok {
 									// t -- t2, new place between
 									tCenter, t2Center := t.Center(), t2.Center()
-									p := c.model.addPlace((tCenter[0]+t2Center[0])/2,
-										(tCenter[1]+t2Center[1])/2)
-									c.model.connectItems(t2, p, false)
-									c.model.connectItems(t, p, true)
+									p := c.model.addPlace((tCenter.X+t2Center.X)/2,
+										(tCenter.Y+t2Center.Y)/2)
+									t2.link(p, false)
+									t.link(p, true)
 								} else {
-									log.Println("Unable to connect smth to transition")
+									log.Println("Unable to link smth to transition")
 								}
 							}
 							c.model.deselectAll()
 						} else if focused == nil && !ok {
-							// stroking the void, cut the connections
-							start := geometry.NewPoint(c.model.MagicStroke.X0, c.model.MagicStroke.Y0)
-							end := geometry.NewPoint(c.model.MagicStroke.X1, c.model.MagicStroke.Y1)
+							// stroking the void, cut the links
+							start := c.model.util.min
+							end := c.model.util.max
 
-							var toDisconnect []*place
+							var toUnlink []*place
 							for _, t := range c.model.transitions {
-								centerT := t.Center()
-								toDisconnect = make([]*place, 0, len(t.in))
-								for _, p := range t.in {
-									centerP := p.Center()
+								toUnlink = make([]*place, 0, len(t.in))
+								for i, p := range t.in {
 									control := p.outControl.Center()
-									if geometry.CheckSegmentsCrossing(start, end, centerP, control) ||
-										geometry.CheckSegmentsCrossing(start, end, control, centerT) {
-										toDisconnect = append(toDisconnect, p)
+									borderP := p.BorderPoint(control.X, control.Y, BorderPlaceDist)
+									borderT := t.BorderPoint(true, i)
+									if geometry.CheckSegmentsCrossing(start, end, borderP, control) ||
+										geometry.CheckSegmentsCrossing(start, end, control, borderT) {
+										toUnlink = append(toUnlink, p)
 									}
 								}
-								for _, p := range toDisconnect {
-									c.model.disconnectItems(t, p, true)
+								for _, p := range toUnlink {
+									t.unlink(p, true)
 								}
-								toDisconnect = make([]*place, 0, len(t.out))
-								for _, p := range t.out {
-									centerP := p.Center()
+								toUnlink = make([]*place, 0, len(t.out))
+								for i, p := range t.out {
 									control := p.inControl.Center()
-									if geometry.CheckSegmentsCrossing(start, end, centerP, control) ||
-										geometry.CheckSegmentsCrossing(start, end, control, centerT) {
-										toDisconnect = append(toDisconnect, p)
+									borderP := p.BorderPoint(control.X, control.Y, BorderPlaceTipDist)
+									borderT := t.BorderPoint(false, i)
+									if geometry.CheckSegmentsCrossing(start, end, borderP, control) ||
+										geometry.CheckSegmentsCrossing(start, end, control, borderT) {
+										toUnlink = append(toUnlink, p)
 									}
 								}
-								for _, p := range toDisconnect {
-									c.model.disconnectItems(t, p, false)
+								for _, p := range toUnlink {
+									t.unlink(p, false)
 								}
 							}
 						}
@@ -384,10 +379,8 @@ func (c *Ctrl) handleEvents() {
 
 					focused = nil
 					copied = false
-					c.model.MagicStrokeUsed = false
-					c.model.MagicRectUsed = false
-					c.model.updatedMagicStroke()
-					c.model.updated()
+					c.model.util.kind = UtilNone
+					c.model.update()
 
 				case EventMouseDoubleClick:
 					if c.ModifierKeyControl || c.ModifierKeyShift {
@@ -398,7 +391,7 @@ func (c *Ctrl) handleEvents() {
 						c.model.selectItem(focused.(item))
 						if transition, ok := focused.(*transition); ok {
 							transition.Rotate()
-							c.model.updated()
+							c.model.update()
 						}
 						if place, ok := focused.(*place); ok {
 							if c.ModifierKeyAlt {
@@ -406,7 +399,7 @@ func (c *Ctrl) handleEvents() {
 							} else {
 								place.counter++
 							}
-							c.model.updated()
+							c.model.update()
 						}
 					}
 				}
@@ -418,7 +411,26 @@ func (c *Ctrl) handleEvents() {
 }
 
 func (c *Ctrl) groupItems(items map[item]bool) {
+	for it := range items {
+		switch it.(type) {
+		case *transition:
+			if it.(*transition).KindInGroup(items) == TransitionExposed {
+				return // no way
+			}
+		case *place:
+			if it.(*place).KindInGroup(items) == PlaceExposed {
+				return // no way
+			}
+		case *group:
+			if it.(*group).KindInGroup(items) == GroupExposed {
+				return // no way
+			}
+		}
+	}
 	group := c.model.addGroup(items)
+	group.updateBounds()
+	group.updateIO(c.model)
+	group.adjustIO()
 	c.model.deselectAll()
 	for it := range items {
 		group.model.selected[it] = true
@@ -433,7 +445,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 		case KeyCodeG:
 			if len(c.model.selected) > 0 {
 				c.groupItems(c.model.selected)
-				c.model.updated()
+				c.model.update()
 			}
 			return
 		}
@@ -485,7 +497,8 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 			switch ev.keycode {
 			case 8, 16777219, 16777223: // backspace
 				if len(l) > 0 {
-					it.SetLabel(l[:len(l)-1])
+					_, size := utf8.DecodeLastRuneInString(l)
+					it.SetLabel(l[:len(l)-size])
 					updated = true
 				}
 			case 13, 16777220, 16777221: // return
@@ -503,11 +516,11 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 			}
 		}
 		if !updated && c.ModifierKeyAlt {
-			// displaying connections
+			// displaying links
 			updated = true
 		}
 	}
 	if updated {
-		c.model.updated()
+		c.model.update()
 	}
 }
