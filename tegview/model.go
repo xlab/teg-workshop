@@ -15,7 +15,7 @@ const (
 	ControlPointWidth  = 10.0
 	ControlPointHeight = 10.0
 	PlaceRadius        = 25.0
-	GridDefaultGap     = 16
+	GridDefaultGap     = 16.0
 )
 
 const (
@@ -256,12 +256,12 @@ func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
 }
 
 func (t *transition) Align() (float64, float64) {
-	x, y := math.Floor(t.Center().X), math.Floor(t.Center().Y)
-	shiftX, shiftY := geometry.Align(int(x), int(y), GridDefaultGap)
+	x, y := t.Center().X, t.Center().Y
+	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	t.Move(x, y)
+	//t.Move(x, y)
 	t.Shift(shiftX, shiftY)
 	for _, p := range t.in {
 		p.refineControls()
@@ -273,24 +273,24 @@ func (t *transition) Align() (float64, float64) {
 }
 
 func (p *place) Align() (float64, float64) {
-	x, y := math.Floor(p.Center().X), math.Floor(p.Center().Y)
-	shiftX, shiftY := geometry.Align(int(x), int(y), GridDefaultGap)
+	x, y := p.Center().X, p.Center().Y
+	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	p.Move(x, y)
+	//p.Move(x, y)
 	p.Shift(shiftX, shiftY)
 	p.shiftControls(shiftX, shiftY)
 	return shiftX, shiftY
 }
 
 func (g *group) Align() (float64, float64) {
-	x, y := math.Floor(g.Center().X), math.Floor(g.Center().Y)
-	shiftX, shiftY := geometry.Align(int(x), int(y), GridDefaultGap)
+	x, y := g.Center().X, g.Center().Y
+	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	g.Move(x, y)
+	//g.Move(x, y)
 	g.Shift(shiftX, shiftY)
 	return shiftX, shiftY
 }
@@ -559,18 +559,21 @@ func (g *group) updateIO(tg *teg) {
 
 	for _, t := range g.model.transitions {
 		kind := t.KindInGroup(g.model.Items())
+		c := t.Copy().(*transition)
+		for _, p := range t.in {
+			c.in = append(c.in, p)
+		}
+		for _, p := range t.out {
+			c.out = append(c.out, p)
+		}
 		switch kind {
 		case TransitionInput:
-			c := t.Copy().(*transition)
 			g.inputs[c] = true
-			tg.transitions = append(tg.transitions, c)
-			t.proxy = c
 		case TransitionOutput:
-			c := t.Copy().(*transition)
 			g.outputs[c] = true
-			tg.transitions = append(tg.transitions, c)
-			t.proxy = c
 		}
+		tg.transitions = append(tg.transitions, c)
+		t.proxy = c
 	}
 }
 
@@ -904,8 +907,8 @@ func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 					}
 					tNew.link(pNew, true)
 					if p.outControl.modified {
-						pNew.outControl = newControlPoint(p.outControl.X(),
-							p.outControl.Y(), true)
+						pNew.outControl.Move(p.outControl.Center().X, p.outControl.Center().Y)
+						pNew.outControl.modified = true
 					}
 				}
 			}
@@ -919,8 +922,8 @@ func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 					}
 					tNew.link(pNew, false)
 					if p.inControl.modified {
-						pNew.inControl = newControlPoint(p.inControl.X(),
-							p.inControl.Y(), true)
+						pNew.inControl.Move(p.inControl.Center().X, p.inControl.Center().Y)
+						pNew.inControl.modified = true
 					}
 				}
 			}

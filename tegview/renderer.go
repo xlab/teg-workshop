@@ -44,11 +44,6 @@ type List struct {
 	Length int
 }
 
-func (l *List) Clear() {
-	l.items = l.items[0:0]
-	l.Length = 0
-}
-
 func list(its []interface{}) *List {
 	return &List{items: its, Length: len(its)}
 }
@@ -84,16 +79,6 @@ func newTegBuffer() *TegBuffer {
 	}
 }
 
-func (t *TegBuffer) Clear() {
-	t.Circles.Clear()
-	t.Rects.Clear()
-	t.Bezier.Clear()
-	t.Polys.Clear()
-	t.Texts.Clear()
-	t.Lines.Clear()
-	t.Chains.Clear()
-}
-
 type tegRenderer struct {
 	task   chan interface{}
 	ready  chan interface{}
@@ -101,6 +86,12 @@ type tegRenderer struct {
 	buf    *TegBuffer
 	Screen *TegBuffer
 	Ready  bool
+
+	zoom          float64
+	canvasWidth   float64
+	canvasHeight  float64
+	viewboxWidth  float64
+	viewboxHeight float64
 }
 
 func newTegRenderer(ctrl *Ctrl) *tegRenderer {
@@ -110,16 +101,26 @@ func newTegRenderer(ctrl *Ctrl) *tegRenderer {
 		Screen: newTegBuffer(),
 		buf:    newTegBuffer(),
 		ctrl:   ctrl,
+		zoom:   1.0,
 	}
 }
 
-func (t *tegRenderer) process(model *teg) {
+func (tr *tegRenderer) fixViewport() {
+	tr.zoom = tr.ctrl.Zoom
+	tr.canvasWidth = tr.ctrl.CanvasWidth
+	tr.canvasHeight = tr.ctrl.CanvasHeight
+	tr.viewboxWidth = tr.ctrl.CanvasWindowWidth
+	tr.viewboxHeight = tr.ctrl.CanvasWindowHeight
+}
+
+func (tr *tegRenderer) process(model *teg) {
 	for {
-		<-t.task
-		t.renderModel(model, false)
-		*t.Screen = *t.buf
-		t.buf = newTegBuffer()
-		t.ready <- nil
+		<-tr.task
+		tr.fixViewport()
+		tr.renderModel(model, false)
+		tr.Screen = tr.buf
+		tr.buf = newTegBuffer()
+		tr.ready <- nil
 	}
 }
 
@@ -131,6 +132,25 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 		if !nested || t.proxy == nil {
 			tr.renderTransition(t)
 
+			for i, p := range t.in {
+				tr.renderArc(t, p, true, i)
+			}
+			for i, p := range t.out {
+				tr.renderArc(t, p, false, i)
+			}
+		}
+	}
+	for _, g := range tg.groups {
+		tr.renderModel(g.model, true)
+		for t := range g.inputs {
+			for i, p := range t.in {
+				tr.renderArc(t, p, true, i)
+			}
+			for i, p := range t.out {
+				tr.renderArc(t, p, false, i)
+			}
+		}
+		for t := range g.outputs {
 			for i, p := range t.in {
 				tr.renderArc(t, p, true, i)
 			}
@@ -293,29 +313,6 @@ func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index in
 		endPointed = endP
 	}
 
-	p1 := &geometry.Point{endPointed.xTip, endPointed.yTip}
-	p2 := &geometry.Point{p1.X - TipSide*thick, p1.Y + TipHeight*thick}
-	p3 := &geometry.Point{p1.X, p1.Y + TipHeight*2/3*thick}
-	p4 := &geometry.Point{p1.X + TipSide*thick, p1.Y + TipHeight*thick}
-
-	p1 = p1.Rotate(p1, -endPointed.angle)
-	p2 = p2.Rotate(p1, -endPointed.angle)
-	p3 = p3.Rotate(p1, -endPointed.angle)
-	p4 = p4.Rotate(p1, -endPointed.angle)
-
-	pointer := render.NewPoly(
-		tr.absPoint(tr.scalePoint(p1)),
-		tr.absPoint(tr.scalePoint(p2)),
-		tr.absPoint(tr.scalePoint(p3)),
-		tr.absPoint(tr.scalePoint(p4)),
-	)
-
-	pointer.Style = &render.Style{Fill: true, FillStyle: ColorDefault}
-	if selected {
-		pointer.Style.FillStyle = ColorSelected
-	}
-	tr.buf.Polys.Put(pointer)
-
 	var xyC2 *geometry.Point
 	if inbound {
 		if t.horizontal {
@@ -330,6 +327,26 @@ func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index in
 			xyC2 = pt(endT.x+Margin, endT.y)
 		}
 	}
+
+	p1 := &geometry.Point{endPointed.xTip, endPointed.yTip}
+	p2 := &geometry.Point{p1.X - TipSide*thick, p1.Y + TipHeight*thick}
+	p3 := &geometry.Point{p1.X, p1.Y + TipHeight*2/3*thick}
+	p4 := &geometry.Point{p1.X + TipSide*thick, p1.Y + TipHeight*thick}
+	p1 = p1.Rotate(p1, -endPointed.angle)
+	p2 = p2.Rotate(p1, -endPointed.angle)
+	p3 = p3.Rotate(p1, -endPointed.angle)
+	p4 = p4.Rotate(p1, -endPointed.angle)
+	pointer := render.NewPoly(
+		tr.absPoint(tr.scalePoint(p1)),
+		tr.absPoint(tr.scalePoint(p2)),
+		tr.absPoint(tr.scalePoint(p3)),
+		tr.absPoint(tr.scalePoint(p4)),
+	)
+	pointer.Style = &render.Style{Fill: true, FillStyle: ColorDefault}
+	if selected {
+		pointer.Style.FillStyle = ColorSelected
+	}
+
 	curve := &render.BezierCurve{
 		Style: &render.Style{
 			LineWidth:   tr.scale(thick),
@@ -345,6 +362,7 @@ func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index in
 		curve.Style.StrokeStyle = ColorSelected
 	}
 	tr.buf.Bezier.Put(curve)
+	tr.buf.Polys.Put(pointer)
 }
 
 func (tr *tegRenderer) renderConnection(t *transition, p *place, inbound bool, index int) {
@@ -657,24 +675,24 @@ func (tr *tegRenderer) renderPlaceValue(x, y, room float64, selected bool, count
 }
 
 func (tr *tegRenderer) scale(f float64) float64 {
-	return f * tr.ctrl.Zoom
+	return f * tr.zoom
 }
 
 func (tr *tegRenderer) scalePoint(p *geometry.Point) *geometry.Point {
-	return &geometry.Point{p.X * tr.ctrl.Zoom, p.Y * tr.ctrl.Zoom}
+	return &geometry.Point{p.X * tr.zoom, p.Y * tr.zoom}
 }
 
 func (tr *tegRenderer) absX(x float64) float64 {
-	return tr.ctrl.CanvasWidth/2 + tr.ctrl.CanvasWindowWidth/2 + x
+	return tr.canvasWidth/2 + tr.viewboxWidth/2 + x
 }
 
 func (tr *tegRenderer) absY(y float64) float64 {
-	return tr.ctrl.CanvasHeight/2 + tr.ctrl.CanvasWindowHeight/2 + y
+	return tr.canvasHeight/2 + tr.viewboxHeight/2 + y
 }
 
 func (tr *tegRenderer) absPoint(p *geometry.Point) *render.Point {
-	return rpt(tr.ctrl.CanvasWidth/2+tr.ctrl.CanvasWindowWidth/2+p.X,
-		tr.ctrl.CanvasHeight/2+tr.ctrl.CanvasWindowHeight/2+p.Y)
+	return rpt(tr.canvasWidth/2+tr.viewboxWidth/2+p.X,
+		tr.canvasHeight/2+tr.viewboxHeight/2+p.Y)
 }
 
 func pt(x, y float64) *geometry.Point {

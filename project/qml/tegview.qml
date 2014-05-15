@@ -147,7 +147,7 @@ ApplicationWindow {
                 console.error("error: cache broken")
                 return
             }
-            R.render(ctx, region, renderer.cache)
+            R.render(ctx, region, cv.zoom, renderer.cache)
         }
 
         property real w
@@ -209,14 +209,17 @@ ApplicationWindow {
         MouseArea {
             id: drag
             anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             property real dragOffset: 50.0
             property int cx0
             property int cy0
             property int x0
             property int y0
+            property bool rightPressed
 
             onPressed: {
-                if(viewMode) {
+                rightPressed = (mouse.button === Qt.RightButton)
+                if(viewMode || rightPressed) {
                     cx0 = cv.canvasWindow.x
                     cy0 = cv.canvasWindow.y
                     x0 = mouse.x
@@ -228,7 +231,7 @@ ApplicationWindow {
 
             onPositionChanged: {
                 if(x0 != mouse.x || y0 != mouse.y) {
-                    if (viewMode) {
+                    if (viewMode || rightPressed) {
                         cv.canvasWindow.x = cx0 + (x0 - mouse.x)
                         cv.canvasWindow.y = cy0 + (y0 - mouse.y)
                         cv.requestPaint()
@@ -249,13 +252,14 @@ ApplicationWindow {
             }
 
             onReleased: {
-                if (editMode) {
+                if (editMode && !rightPressed) {
                     ctrl.mouseReleased(mouse.x, mouse.y)
                 }
+                rightPressed = !(mouse.button === Qt.RightButton)
             }
 
             onDoubleClicked: {
-                if (editMode) {
+                if (editMode && !rightPressed) {
                     ctrl.mouseDoubleClicked(mouse.x, mouse.y)
                 }
             }
@@ -281,6 +285,7 @@ ApplicationWindow {
             cv.requestPaint()
         }
 
+        // see bug
         function prepareCache(screen) {
             var cache = {
                 "circle": [], "rect": [], "line": [],

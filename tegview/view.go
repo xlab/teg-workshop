@@ -59,6 +59,8 @@ type Test struct {
 
 func (v *View) Show() (closed chan struct{}) {
 	runtime.GOMAXPROCS(2)
+	v.model.fakeData()
+
 	go func() {
 		for {
 			select {
@@ -73,7 +75,6 @@ func (v *View) Show() (closed chan struct{}) {
 		v.renderer.process(v.model)
 	}()
 
-	v.model.fakeData()
 	v.model.update()
 	v.control.handleEvents()
 	v.win.Show()

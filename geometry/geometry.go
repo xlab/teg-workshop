@@ -52,19 +52,20 @@ func (c *Circle) Corner() *Point {
 	return &Point{c.center.X - c.r, c.center.Y - c.r}
 }
 
-func Align(x, y, gap int) (shiftX, shiftY float64) {
-	dx, dy := math.Abs(float64(x%gap)), math.Abs(float64(y%gap))
+func Align(x, y, gap float64) (shiftX, shiftY float64) {
+	dx := math.Abs(float64(int(x) % int(gap)))
+	dy := math.Abs(float64(int(y) % int(gap)))
 	if dx == 0 && dy == 0 {
 		return 0, 0
 	}
 	sx, sy := -1.0, -1.0
-	if dx > float64(gap)/2.0 {
+	if dx > gap/2 {
 		sx = 1.0
-		dx = float64(gap) - dx
+		dx = gap - dx
 	}
-	if dy > float64(gap)/2.0 {
+	if dy > gap/2 {
 		sy = 1.0
-		dy = float64(gap) - dy
+		dy = gap - dy
 	}
 	if x < 0 {
 		dx = -dx
