@@ -156,20 +156,37 @@ func (c *Ctrl) handleEvents() {
 						} else {
 							it := smth.(item)
 							//x0, y0 = it.Center().X, it.Center().Y
+							var selected bool
 							if len(c.model.selected) > 1 {
 								if c.model.isSelected(it) && c.ModifierKeyControl {
 									c.model.deselectItem(it)
 								} else if c.ModifierKeyControl {
 									c.model.selectItem(it)
+									selected = true
 								} else if !c.model.isSelected(it) {
 									c.model.deselectAll()
 									c.model.selectItem(it)
+									selected = true
 								}
 							} else if !c.ModifierKeyControl {
 								c.model.deselectAll()
 								c.model.selectItem(it)
+								selected = true
 							} else {
 								c.model.selectItem(it)
+								selected = true
+							}
+							if selected {
+								if t, ok := it.(*transition); ok && t.proxy != nil {
+									g := t.proxy.parent.parent
+									for t := range g.inputs {
+										c.model.deselectItem(t)
+									}
+									for t := range g.outputs {
+										c.model.deselectItem(t)
+									}
+									c.model.selectItem(g) // select group
+								}
 							}
 						}
 						c.model.update()
@@ -210,13 +227,13 @@ func (c *Ctrl) handleEvents() {
 						toResetIn := make(map[*place]bool, len(c.model.places))
 						toResetOut := make(map[*place]bool, len(c.model.places))
 						for it := range c.model.selected {
-							c.model.shiftItem(it, dx, dy)
-							if place, ok := it.(*place); ok {
-								if place.in != nil {
-									toOrder[place.in] = true
+							it.Shift(dx, dy)
+							if p, ok := it.(*place); ok {
+								if p.in != nil {
+									toOrder[p.in] = true
 								}
-								if place.out != nil {
-									toOrder[place.out] = true
+								if p.out != nil {
+									toOrder[p.out] = true
 								}
 							} else if transition, ok := it.(*transition); ok {
 								toOrder[transition] = true
@@ -430,6 +447,7 @@ func (c *Ctrl) groupItems(items map[item]bool) {
 	group := c.model.addGroup(items)
 	group.updateBounds()
 	group.updateIO(c.model)
+	group.Align()
 	group.adjustIO()
 	c.model.deselectAll()
 	for it := range items {
@@ -451,41 +469,44 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 		}
 
 		for it := range c.model.selected {
-			if place, ok := it.(*place); ok {
+			if p, ok := it.(*place); ok {
 				switch ev.keycode {
 				case KeyCodeJ:
-					place.counter++
+					p.counter++
 				case KeyCodeN:
-					place.counter--
+					p.counter--
 				case KeyCodeF:
-					place.resetProperties()
+					p.resetProperties()
 				case KeyCodeK:
-					place.timer++
+					p.timer++
 				case KeyCodeM:
-					place.timer--
+					p.timer--
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)
-					c.model.removePlace(place)
+					c.model.removePlace(p)
 				}
-				if place.counter > MaxPlaceCounter {
-					place.counter = MaxPlaceCounter
-				} else if place.counter < MinPlaceCounter {
-					place.counter = 0
+				if p.counter > MaxPlaceCounter {
+					p.counter = MaxPlaceCounter
+				} else if p.counter < MinPlaceCounter {
+					p.counter = 0
 				}
-				if place.timer > MaxPlaceTimer {
-					place.timer = MaxPlaceTimer
-				} else if place.timer < MinPlaceTimer {
-					place.timer = 0
+				if p.timer > MaxPlaceTimer {
+					p.timer = MaxPlaceTimer
+				} else if p.timer < MinPlaceTimer {
+					p.timer = 0
 				}
 				updated = true
-			} else if transition, ok := it.(*transition); ok {
+			} else if t, ok := it.(*transition); ok {
 				switch ev.keycode {
 				case KeyCodeF:
-					transition.resetProperties()
+					t.resetProperties()
+					updated = true
+				case KeyCodeT:
+					t.nextKind()
 					updated = true
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)
-					c.model.removeTransition(transition)
+					c.model.removeTransition(t)
 					updated = true
 				}
 			}

@@ -141,6 +141,10 @@ ApplicationWindow {
         canvasWindow.width: width
         canvasWindow.height: height
         tileSize: "1024x1024"
+
+        property real w
+        property real h
+
         onPaint: {
             var ctx = cv.getContext("2d")
             if(!renderer.cache) {
@@ -150,8 +154,6 @@ ApplicationWindow {
             R.render(ctx, region, cv.zoom, renderer.cache)
         }
 
-        property real w
-        property real h
         onCanvasWindowChanged: {
             if(canvasWindow.width != w || canvasWindow.height != h) {
                 w = canvasWindow.width
@@ -160,11 +162,8 @@ ApplicationWindow {
             }
         }
 
-        function absCoords(x, y){
-            return {
-                "x":cv.canvasSize.width / 2 + cv.canvasWindow.width / 2 + x,
-                "y":cv.canvasSize.height / 2 + cv.canvasWindow.height / 2 + y,
-            }
+        onZoomChanged: {
+            ctrl.flush()
         }
 
         Component.onCompleted: {
@@ -172,10 +171,18 @@ ApplicationWindow {
             canvasWindow.y = canvasSize.height / 2
             coldstart.start()
         }
+    }
 
-        onZoomChanged: {
-            ctrl.flush()
-        }
+    MouseArea {
+        id: io
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        property real dragOffset: 50.0
+        property int cx0
+        property int cy0
+        property int x0
+        property int y0
+        property bool rightPressed
 
         focus: true
         Keys.onPressed: {
@@ -206,71 +213,59 @@ ApplicationWindow {
             ctrl.flush()
         }
 
-        MouseArea {
-            id: drag
-            anchors.fill: parent
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
-            property real dragOffset: 50.0
-            property int cx0
-            property int cy0
-            property int x0
-            property int y0
-            property bool rightPressed
+        onPressed: {
+            rightPressed = (mouse.button === Qt.RightButton)
+            if(viewMode || rightPressed) {
+                cx0 = cv.canvasWindow.x
+                cy0 = cv.canvasWindow.y
+                x0 = mouse.x
+                y0 = mouse.y
+            } else if(editMode) {
+                ctrl.mousePressed(mouse.x, mouse.y)
+            }
+        }
 
-            onPressed: {
-                rightPressed = (mouse.button === Qt.RightButton)
-                if(viewMode || rightPressed) {
-                    cx0 = cv.canvasWindow.x
-                    cy0 = cv.canvasWindow.y
-                    x0 = mouse.x
-                    y0 = mouse.y
+        onPositionChanged: {
+            if(x0 != mouse.x || y0 != mouse.y) {
+                if (viewMode || rightPressed) {
+                    cv.canvasWindow.x = cx0 + (x0 - mouse.x)
+                    cv.canvasWindow.y = cy0 + (y0 - mouse.y)
+                    cv.requestPaint()
                 } else if(editMode) {
-                    ctrl.mousePressed(mouse.x, mouse.y)
-                }
-            }
-
-            onPositionChanged: {
-                if(x0 != mouse.x || y0 != mouse.y) {
-                    if (viewMode || rightPressed) {
-                        cv.canvasWindow.x = cx0 + (x0 - mouse.x)
-                        cv.canvasWindow.y = cy0 + (y0 - mouse.y)
-                        cv.requestPaint()
-                    } else if(editMode) {
-                        if(mouse.x < 0 + dragOffset) {
-                            cv.canvasWindow.x += -5.0
-                        } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
-                            cv.canvasWindow.x += 5.0
-                        }
-                        if(mouse.y < 0 + dragOffset) {
-                            cv.canvasWindow.y += -5.0
-                        } else if(mouse.y > cv.canvasWindow.height - dragOffset) {
-                            cv.canvasWindow.y += 5.0
-                        }
-                        ctrl.mouseMoved(mouse.x, mouse.y)
+                    if(mouse.x < 0 + dragOffset) {
+                        cv.canvasWindow.x += -5.0
+                    } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
+                        cv.canvasWindow.x += 5.0
                     }
-                }
-            }
-
-            onReleased: {
-                if (editMode && !rightPressed) {
-                    ctrl.mouseReleased(mouse.x, mouse.y)
-                }
-                rightPressed = !(mouse.button === Qt.RightButton)
-            }
-
-            onDoubleClicked: {
-                if (editMode && !rightPressed) {
-                    ctrl.mouseDoubleClicked(mouse.x, mouse.y)
+                    if(mouse.y < 0 + dragOffset) {
+                        cv.canvasWindow.y += -5.0
+                    } else if(mouse.y > cv.canvasWindow.height - dragOffset) {
+                        cv.canvasWindow.y += 5.0
+                    }
+                    ctrl.mouseMoved(mouse.x, mouse.y)
                 }
             }
         }
 
-        Timer {
-            id: coldstart
-            interval: 1000
-            onTriggered: ctrl.flush()
-            repeat: false
+        onReleased: {
+            if (editMode && !rightPressed) {
+                ctrl.mouseReleased(mouse.x, mouse.y)
+            }
+            rightPressed = !(mouse.button === Qt.RightButton)
         }
+
+        onDoubleClicked: {
+            if (editMode && !rightPressed) {
+                ctrl.mouseDoubleClicked(mouse.x, mouse.y)
+            }
+        }
+    }
+
+    Timer {
+        id: coldstart
+        interval: 1000
+        onTriggered: ctrl.flush()
+        repeat: false
     }
 
     Item {
@@ -285,10 +280,10 @@ ApplicationWindow {
             cv.requestPaint()
         }
 
-        // see bug
+        // see bug https://groups.google.com/d/msg/go-qml/h5gDOjyE8Yc/-oWP6GLaXzIJ
         function prepareCache(screen) {
             var cache = {
-                "circle": [], "rect": [], "line": [],
+                "circle": [], "rect": [], "line": [], "rrect": [],
                 "bezier": [], "poly": [], "text": [], "chain": []
             }
             var i, j, buf, it, pos, style, points
@@ -320,6 +315,21 @@ ApplicationWindow {
                     "fill": style.fill, "stroke": style.stroke,
                     "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
                     "x": it.x, "y": it.y, "w": it.w, "h": it.h
+                }
+            }
+
+            buf = screen.rRects
+            if(!buf) return
+            for(i = 0; i < buf.length; ++i) {
+                it = buf.at(i)
+                if(!it) return
+                style = it.style
+                if(!style) return
+                cache.rrect[i] = {
+                    "lineWidth": style.lineWidth,
+                    "fill": style.fill, "stroke": style.stroke,
+                    "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
+                    "x": it.x, "y": it.y, "w": it.w, "h": it.h, "r": it.r
                 }
             }
 

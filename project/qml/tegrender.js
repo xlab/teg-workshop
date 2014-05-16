@@ -14,7 +14,15 @@ function renderBuf(ctx, region, zoom, cache, kind) {
         ctx.strokeStyle = it.strokeStyle
         ctx.fillStyle = it.fillStyle
 
-        if(kind === "rect") {
+        if(kind === "rrect") {
+            /*
+            dx = it.x - region.x
+            dy = it.y - region.y
+            if (dx > -mz && dy > -mz && dx < maxX - it.w && dy < maxY - it.h) {
+            */
+            ctx.roundedRect(it.x, it.y, it.w, it.h, it.r, it.r)
+            draw(ctx, it.stroke, it.fill)
+        } else if(kind === "rect") {
             /*
             dx = it.x - region.x
             dy = it.y - region.y
@@ -108,6 +116,7 @@ function render(ctx, region, zoom, cache) {
     var rh = region.height
     ctx.clearRect(rx, ry, rw, rh)
 
+    renderBuf(ctx, region, zoom, cache, "rrect")
     renderBuf(ctx, region, zoom, cache, "circle")
     renderBuf(ctx, region, zoom, cache, "rect")
     renderBuf(ctx, region, zoom, cache, "line")

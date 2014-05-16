@@ -17,7 +17,9 @@ const (
 const (
 	ColorSelected      = "#b10000"
 	ColorDefault       = "#000000"
+	ColorTransitionIO  = "#2980b9"
 	ColorComments      = "#7f8c8d"
+	ColorGroupFrame    = "#000000"
 	ColorUtility       = "#3498db"
 	ColorUtilityShadow = "#202980b9"
 	ColorControlPoint  = "#f1c40f"
@@ -32,6 +34,7 @@ const (
 	TipSide       = 3.0
 	PlaceFontSize = 14.0
 	TextFontSize  = 14.0
+	GroupFrameR   = 10.0
 
 	BorderTransitionDist    = 3.0
 	BorderTransitionTipDist = 2.0
@@ -60,6 +63,7 @@ func (l *List) At(i int) interface{} {
 type TegBuffer struct {
 	Circles *List
 	Rects   *List
+	RRects  *List
 	Bezier  *List
 	Polys   *List
 	Texts   *List
@@ -71,6 +75,7 @@ func newTegBuffer() *TegBuffer {
 	return &TegBuffer{
 		Circles: list(make([]interface{}, 0, 256)),
 		Rects:   list(make([]interface{}, 0, 256)),
+		RRects:  list(make([]interface{}, 0, 100)),
 		Bezier:  list(make([]interface{}, 0, 256)),
 		Polys:   list(make([]interface{}, 0, 256)),
 		Texts:   list(make([]interface{}, 0, 1024)),
@@ -129,7 +134,7 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 		tr.renderPlace(p)
 	}
 	for _, t := range tg.transitions {
-		if !nested || t.proxy == nil {
+		if !nested || t.kind == TransitionInternal {
 			tr.renderTransition(t)
 
 			for i, p := range t.in {
@@ -141,7 +146,39 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 		}
 	}
 	for _, g := range tg.groups {
-		tr.renderModel(g.model, true)
+		tr.renderGroup(g)
+	}
+	if !nested && tr.ctrl.ModifierKeyAlt {
+		for _, t := range tg.transitions {
+			for i, p := range t.in {
+				tr.renderConnection(t, p, true, i)
+			}
+			for i, p := range t.out {
+				tr.renderConnection(t, p, false, i)
+			}
+		}
+	}
+	if !nested && tg.util.kind != UtilNone {
+		tr.renderUtility(tg.util)
+	}
+}
+
+func (tr *tegRenderer) renderGroup(g *group) {
+	frame := &render.RoundedRect{
+		Style: &render.Style{
+			Stroke:      true,
+			StrokeStyle: ColorComments, // #b4b4b4
+		},
+		X: tr.absX(tr.scale(g.X())),
+		Y: tr.absY(tr.scale(g.Y())),
+		W: tr.scale(g.Width()),
+		H: tr.scale(g.Height()),
+		R: tr.scale(GroupFrameR),
+	}
+	tr.buf.RRects.Put(frame)
+
+	tr.renderModel(g.model, true)
+	/*
 		for t := range g.inputs {
 			for i, p := range t.in {
 				tr.renderArc(t, p, true, i)
@@ -158,20 +195,7 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 				tr.renderArc(t, p, false, i)
 			}
 		}
-	}
-	if !nested && tr.ctrl.ModifierKeyAlt {
-		for _, t := range tg.transitions {
-			for i, p := range t.in {
-				tr.renderConnection(t, p, true, i)
-			}
-			for i, p := range t.out {
-				tr.renderConnection(t, p, false, i)
-			}
-		}
-	}
-	if !nested && tg.util.kind != UtilNone {
-		tr.renderUtility(tg.util)
-	}
+	*/
 }
 
 func (tr *tegRenderer) renderUtility(u *utility) {
@@ -261,6 +285,51 @@ func (tr *tegRenderer) renderTransition(t *transition) {
 		W: tr.scale(t.Width()),
 		H: tr.scale(t.Height()),
 	}
+	var knob *render.Rect
+	kw, kh := Margin/5, Margin/17
+	if t.kind == TransitionInput {
+		rect.Style.FillStyle = ColorTransitionIO
+		knob = &render.Rect{
+			Style: &render.Style{
+				Fill:      true,
+				FillStyle: ColorTransitionIO,
+			},
+		}
+		if t.horizontal {
+			kw, kh = kh, kw
+			knob.X = tr.scale(t.Center().X - kw/2)
+			knob.Y = tr.scale(t.Center().Y - kh)
+			knob.W = tr.scale(kw)
+			knob.H = tr.scale(kh)
+		} else {
+			knob.X = tr.scale(t.Center().X - kw)
+			knob.Y = tr.scale(t.Center().Y - kh/2)
+			knob.W = tr.scale(kw)
+			knob.H = tr.scale(kh)
+		}
+		knob.X, knob.Y = tr.absX(knob.X), tr.absY(knob.Y)
+	} else if t.kind == TransitionOutput {
+		rect.Style.FillStyle = ColorTransitionIO
+		knob = &render.Rect{
+			Style: &render.Style{
+				Fill:      true,
+				FillStyle: ColorTransitionIO,
+			},
+		}
+		if t.horizontal {
+			kw, kh = kh, kw
+			knob.X = tr.scale(t.Center().X - kw/2)
+			knob.Y = tr.scale(t.Center().Y)
+			knob.W = tr.scale(kw)
+			knob.H = tr.scale(kh)
+		} else {
+			knob.X = tr.scale(t.Center().X)
+			knob.Y = tr.scale(t.Center().Y - kh/2)
+			knob.W = tr.scale(kw)
+			knob.H = tr.scale(kh)
+		}
+		knob.X, knob.Y = tr.absX(knob.X), tr.absY(knob.Y)
+	}
 	if t.IsSelected() {
 		var d float64
 		if t.horizontal {
@@ -279,6 +348,12 @@ func (tr *tegRenderer) renderTransition(t *transition) {
 		}
 		tr.buf.Circles.Put(shadow)
 		rect.Style.FillStyle = ColorSelected
+		if knob != nil {
+			knob.Style.FillStyle = ColorSelected
+		}
+	}
+	if knob != nil {
+		tr.buf.Rects.Put(knob)
 	}
 	tr.buf.Rects.Put(rect)
 	if len(t.label) > 0 {
@@ -750,7 +825,7 @@ func calcBorderPointTransition(t *transition, inbound bool, count, index int) *e
 	}
 	if t.horizontal {
 		space := calcSpacing(t.Width(), thick, count)
-		margin := calcCenteringMargin(t.Width(), thick, count)
+		margin := calcCenteringMargin(t.Width(), 1.0, count)
 		dx := margin + float64(index)*(thick+space)
 		end.x, end.y = x+dx, y
 		if inbound {
@@ -764,7 +839,7 @@ func calcBorderPointTransition(t *transition, inbound bool, count, index int) *e
 		}
 	} else {
 		space := calcSpacing(t.Height(), thick, count)
-		margin := calcCenteringMargin(t.Height(), thick, count)
+		margin := calcCenteringMargin(t.Height(), 1.0, count)
 		dy := margin + float64(index)*(thick+space)
 		end.x, end.y = x, y+dy
 		if inbound {

@@ -11,7 +11,8 @@ const (
 	TransitionWidth    = 6.0
 	TransitionHeight   = 30.0
 	GroupHeaderHeight  = 20.0
-	GroupMargin        = 10.0
+	GroupMargin        = 30.0
+	GroupIOSpacing     = 10.0
 	ControlPointWidth  = 10.0
 	ControlPointHeight = 10.0
 	PlaceRadius        = 25.0
@@ -90,6 +91,7 @@ type transition struct {
 	label      string
 	horizontal bool
 	parent     *teg
+	kind       int
 }
 
 type group struct {
@@ -193,11 +195,15 @@ func (p *place) refineControls() {
 	}
 }
 
-func (tg *teg) shiftItem(it item, dx float64, dy float64) {
-	it.Shift(dx, dy)
+func (p *place) Shift(dx, dy float64) {
+	p.Circle.Shift(dx, dy)
+	p.shiftControls(dx, dy)
+}
 
-	if place, ok := it.(*place); ok {
-		place.shiftControls(dx, dy)
+func (g *group) Shift(dx, dy float64) {
+	g.Rect.Shift(dx, dy)
+	for it := range g.model.Items() {
+		it.Shift(dx, dy)
 	}
 }
 
@@ -256,12 +262,12 @@ func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
 }
 
 func (t *transition) Align() (float64, float64) {
-	x, y := t.Center().X, t.Center().Y
+	x, y := math.Floor(t.Center().X), math.Floor(t.Center().Y)
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	//t.Move(x, y)
+	t.Move(x, y)
 	t.Shift(shiftX, shiftY)
 	for _, p := range t.in {
 		p.refineControls()
@@ -273,30 +279,34 @@ func (t *transition) Align() (float64, float64) {
 }
 
 func (p *place) Align() (float64, float64) {
-	x, y := p.Center().X, p.Center().Y
+	x, y := math.Floor(p.Center().X), math.Floor(p.Center().Y)
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	//p.Move(x, y)
+	p.Move(x, y)
 	p.Shift(shiftX, shiftY)
 	p.shiftControls(shiftX, shiftY)
 	return shiftX, shiftY
 }
 
 func (g *group) Align() (float64, float64) {
-	x, y := g.Center().X, g.Center().Y
+	x, y := math.Floor(g.Center().X), math.Floor(g.Center().Y)
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	//g.Move(x, y)
+	g.Move(x, y)
 	g.Shift(shiftX, shiftY)
 	return shiftX, shiftY
 }
 
 func (t *transition) Move(x, y float64) {
 	t.Rect.Move(x-t.Width()/2, y-t.Height()/2)
+}
+
+func (g *group) Move(x, y float64) {
+	g.Rect.Move(x-g.Width()/2, y-g.Height()/2)
 }
 
 func (c *controlPoint) Move(x, y float64) {
@@ -480,6 +490,7 @@ type teg struct {
 	groups      []*group
 	inputs      []*transition
 	outputs     []*transition
+	parent      *group
 	selected    map[item]bool
 	updated     chan interface{}
 }
@@ -559,7 +570,11 @@ func (g *group) updateIO(tg *teg) {
 
 	for _, t := range g.model.transitions {
 		kind := t.KindInGroup(g.model.Items())
+		if kind == TransitionInternal {
+			continue
+		}
 		c := t.Copy().(*transition)
+		c.proxy = t
 		for _, p := range t.in {
 			c.in = append(c.in, p)
 		}
@@ -568,12 +583,14 @@ func (g *group) updateIO(tg *teg) {
 		}
 		switch kind {
 		case TransitionInput:
+			t.kind = TransitionInput
 			g.inputs[c] = true
 		case TransitionOutput:
+			t.kind = TransitionOutput
 			g.outputs[c] = true
 		}
+		c.parent = tg
 		tg.transitions = append(tg.transitions, c)
-		t.proxy = c
 	}
 }
 
@@ -581,12 +598,12 @@ func (g *group) adjustIO() {
 	var i, j float64
 	for t := range g.inputs {
 		if t.horizontal {
-			base := g.X()
-			t.Move(base+i*GroupMargin, g.Y())
+			base := g.X() + GroupMargin
+			t.Move(base+i*GroupIOSpacing, g.Y())
 			i++
 		} else {
-			base := g.Y() + GroupHeaderHeight
-			t.Move(g.X(), base+j*GroupMargin)
+			base := g.Y() + GroupMargin + GroupHeaderHeight
+			t.Move(g.X(), base+j*GroupIOSpacing)
 			t.Align()
 			j++
 		}
@@ -594,13 +611,13 @@ func (g *group) adjustIO() {
 	i, j = 0.0, 0.0
 	for t := range g.outputs {
 		if t.horizontal {
-			base := g.X() + g.Width()
-			t.Move(base-i*GroupMargin, g.Y()+g.Height())
+			base := g.X() + g.Width() - GroupMargin
+			t.Move(base-i*GroupIOSpacing, g.Y()+g.Height())
 			t.Align()
 			i++
 		} else {
-			base := g.Y() + g.Height() + GroupHeaderHeight
-			t.Move(g.X()+g.Width(), base-j*GroupMargin)
+			base := g.Y() + g.Height() - t.Height() - GroupHeaderHeight
+			t.Move(g.X()+g.Width(), base-j*GroupIOSpacing)
 			t.Align()
 			j++
 		}
@@ -609,8 +626,15 @@ func (g *group) adjustIO() {
 
 func (g *group) updateBounds() {
 	x0, y0, x1, y1 := detectBounds(g.model.Items())
-	g.Rect = geometry.NewRect(x0-GroupMargin, y0-GroupMargin-GroupHeaderHeight,
-		(x1-x0)+2*GroupMargin, (y1-y0)+2*GroupMargin+GroupHeaderHeight)
+	x, y := x0-GroupMargin, y0-GroupMargin-GroupHeaderHeight
+	w, h := (x1-x0)+2*GroupMargin, (y1-y0)+2*GroupMargin+GroupHeaderHeight
+
+	k := math.Ceil(w / GridDefaultGap)
+	w = k * GridDefaultGap
+	k = math.Ceil(h / GridDefaultGap)
+	h = k * GridDefaultGap
+
+	g.Rect = geometry.NewRect(x, y, w, h)
 }
 
 func (tg *teg) addPlace(x, y float64) *place {
@@ -623,6 +647,7 @@ func (tg *teg) addPlace(x, y float64) *place {
 func (tg *teg) addGroup(items map[item]bool) *group {
 	group := newGroup()
 	group.parent = tg
+	group.model.parent = group
 	group.model.transferItems(tg, items)
 	tg.groups = append(tg.groups, group)
 	return group
@@ -731,11 +756,27 @@ func (tg *teg) deselectAll() {
 
 func (tg *teg) deselectItem(it item) {
 	delete(tg.selected, it)
+	if g, ok := it.(*group); ok {
+		for t := range g.inputs {
+			delete(tg.selected, t)
+		}
+		for t := range g.outputs {
+			delete(tg.selected, t)
+		}
+	}
 }
 
 func (tg *teg) selectItem(it item) {
 	if it != nil {
 		tg.selected[it] = true
+	}
+	if g, ok := it.(*group); ok {
+		for t := range g.inputs {
+			tg.selected[t] = true
+		}
+		for t := range g.outputs {
+			tg.selected[t] = true
+		}
 	}
 }
 
@@ -765,6 +806,34 @@ func (tg *teg) isSelected(it item) bool {
 	return ok
 }
 
+func (t *transition) nextKind() {
+	if t.proxy != nil {
+		return
+	}
+	in := len(t.in) > 0
+	out := len(t.out) > 0
+	switch t.kind {
+	case TransitionInternal:
+		if !in {
+			t.kind = TransitionInput
+		} else if !out {
+			t.kind = TransitionOutput
+		}
+	case TransitionInput:
+		if !out {
+			t.kind = TransitionOutput
+		} else {
+			t.kind = TransitionInternal
+		}
+	case TransitionOutput:
+		if !in {
+			t.kind = TransitionInput
+		} else {
+			t.kind = TransitionInternal
+		}
+	}
+}
+
 func (t *transition) isLinked(p *place, inbound bool) bool {
 	if inbound {
 		return p.out == t
@@ -773,12 +842,15 @@ func (t *transition) isLinked(p *place, inbound bool) bool {
 	}
 }
 
-func (t *transition) relink(p0 *place, p1 *place, inbound bool) {
-	t.unlink(p0, inbound)
-	t.link(p1, inbound)
-}
-
 func (t *transition) link(p *place, inbound bool) {
+	if inbound && t.kind == TransitionInput {
+		return
+	} else if !inbound && t.kind == TransitionOutput {
+		return
+	}
+	if t.proxy != nil {
+		t = t.proxy
+	}
 	if t.isLinked(p, inbound) {
 		return
 	}
@@ -809,6 +881,9 @@ func (t *transition) link(p *place, inbound bool) {
 }
 
 func (t *transition) unlink(p *place, inbound bool) {
+	if t.proxy != nil {
+		t = t.proxy
+	}
 	if !t.isLinked(p, inbound) {
 		return
 	}
@@ -853,10 +928,13 @@ func (tg *teg) transferItems(tg2 *teg, items map[item]bool) {
 	// copy refs to tg
 	for it := range items {
 		if p, ok := it.(*place); ok {
+			p.parent = tg
 			tg.places = append(tg.places, p)
 		} else if t, ok := it.(*transition); ok {
+			t.parent = tg
 			tg.transitions = append(tg.transitions, t)
 		} else if g, ok := it.(*group); ok {
+			g.parent = tg
 			tg.groups = append(tg.groups, g)
 		}
 	}
