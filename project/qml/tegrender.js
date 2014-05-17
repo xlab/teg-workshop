@@ -116,8 +116,8 @@ function render(ctx, region, zoom, cache) {
     var rh = region.height
     ctx.clearRect(rx, ry, rw, rh)
 
-    renderBuf(ctx, region, zoom, cache, "rrect")
     renderBuf(ctx, region, zoom, cache, "circle")
+    renderBuf(ctx, region, zoom, cache, "rrect")
     renderBuf(ctx, region, zoom, cache, "rect")
     renderBuf(ctx, region, zoom, cache, "line")
     renderBuf(ctx, region, zoom, cache, "bezier")

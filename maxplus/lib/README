@@ -1,0 +1,5 @@
+Data processing tools to handle periodic series in dioid.
+
+Stéphane Gaubert proposed algorithms in order to compute the sum, the product and the star of the periodic series in dioid (e.g. in dioid Zmax of Gamma, see the book entitled «SYNCHRONIZATION AND LINEARITY» for the original construction). We propose algorithms computing the inf and the residuation of these same series.
+
+http://perso-laris.univ-angers.fr/~hardouin/outils.html

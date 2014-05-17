@@ -256,9 +256,8 @@ func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
 	end := calcBorderPointTransition(t, inbound, count, index)
 	if inbound {
 		return pt(end.xTip, end.yTip)
-	} else {
-		return pt(end.x, end.y)
 	}
+	return pt(end.x, end.y)
 }
 
 func (t *transition) Align() (float64, float64) {
@@ -837,9 +836,8 @@ func (t *transition) nextKind() {
 func (t *transition) isLinked(p *place, inbound bool) bool {
 	if inbound {
 		return p.out == t
-	} else {
-		return p.in == t
 	}
+	return p.in == t
 }
 
 func (t *transition) link(p *place, inbound bool) {

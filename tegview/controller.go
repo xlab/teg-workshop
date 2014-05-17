@@ -249,14 +249,14 @@ func (c *Ctrl) handleEvents() {
 								}
 							}
 						}
-						for t, _ := range toOrder {
+						for t := range toOrder {
 							t.OrderArcs(true)
 							t.OrderArcs(false)
 						}
-						for p, _ := range toResetIn {
+						for p := range toResetIn {
 							p.resetControlPoint(true)
 						}
-						for p, _ := range toResetOut {
+						for p := range toResetOut {
 							p.resetControlPoint(false)
 						}
 						c.model.update()

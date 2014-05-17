@@ -19,7 +19,7 @@ const (
 	ColorDefault       = "#000000"
 	ColorTransitionIO  = "#2980b9"
 	ColorComments      = "#7f8c8d"
-	ColorGroupFrame    = "#000000"
+	ColorGroupFrame    = "#34495e"
 	ColorUtility       = "#3498db"
 	ColorUtilityShadow = "#202980b9"
 	ColorControlPoint  = "#f1c40f"
@@ -164,10 +164,20 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 }
 
 func (tr *tegRenderer) renderGroup(g *group) {
+	headline := &render.Line{
+		Style: &render.Style{
+			LineWidth:   tr.scale(2.0),
+			Stroke:      true,
+			StrokeStyle: ColorGroupFrame,
+		},
+		Start: tr.absPoint(tr.scalePoint(pt(g.X(), g.Y()+GroupHeaderHeight))),
+		End:   tr.absPoint(tr.scalePoint(pt(g.X()+g.Width(), g.Y()+GroupHeaderHeight))),
+	}
 	frame := &render.RoundedRect{
 		Style: &render.Style{
+			LineWidth:   tr.scale(2.0),
 			Stroke:      true,
-			StrokeStyle: ColorComments, // #b4b4b4
+			StrokeStyle: ColorGroupFrame,
 		},
 		X: tr.absX(tr.scale(g.X())),
 		Y: tr.absY(tr.scale(g.Y())),
@@ -175,7 +185,24 @@ func (tr *tegRenderer) renderGroup(g *group) {
 		H: tr.scale(g.Height()),
 		R: tr.scale(GroupFrameR),
 	}
+	headbg := &render.Rect{
+		Style: &render.Style{
+			Fill:      true,
+			FillStyle: ColorGroupFrame,
+		},
+		X: tr.absX(tr.scale(g.X() - tr.scale(1.0))),
+		Y: tr.absY(tr.scale(g.Y() - tr.scale(2.0))),
+		W: tr.scale(g.Width() + tr.scale(2.0)),
+		H: tr.scale(GroupHeaderHeight + tr.scale(2.0)),
+	}
+	if g.IsSelected() {
+		headbg.Style.FillStyle = ColorSelected
+		frame.Style.StrokeStyle = ColorSelected
+		headline.Style.StrokeStyle = ColorSelected
+	}
+	tr.buf.Rects.Put(headbg)
 	tr.buf.RRects.Put(frame)
+	tr.buf.Lines.Put(headline)
 
 	tr.renderModel(g.model, true)
 	/*
