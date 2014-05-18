@@ -142,9 +142,6 @@ ApplicationWindow {
         canvasWindow.height: height
         tileSize: "1024x1024"
 
-        property real w
-        property real h
-
         onPaint: {
             var ctx = cv.getContext("2d")
             if(!renderer.cache) {
@@ -155,14 +152,16 @@ ApplicationWindow {
         }
 
         onCanvasWindowChanged: {
-            if(canvasWindow.width != w || canvasWindow.height != h) {
-                w = canvasWindow.width
-                h = canvasWindow.height
+            if(canvasWindow.width !== ctrl.canvasWindowWidth ||
+                    canvasWindow.height !== ctrl.canvasWindowHeight) {
+                ctrl.canvasWindowWidth = canvasWindow.width
+                ctrl.canvasWindowHeight = canvasWindow.height
                 ctrl.flush()
             }
         }
 
         onZoomChanged: {
+            ctrl.zoom = cv.zoom
             ctrl.flush()
         }
 
@@ -195,6 +194,7 @@ ApplicationWindow {
             } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
                 editbtn.checked = true
             } else {
+                //console.log(event.key, event.text)
                 ctrl.keyPressed(event.key, event.text)
             }
 

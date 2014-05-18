@@ -10,7 +10,6 @@ import (
 const (
 	TransitionWidth    = 6.0
 	TransitionHeight   = 30.0
-	GroupHeaderHeight  = 20.0
 	GroupMargin        = 30.0
 	GroupIOSpacing     = 10.0
 	ControlPointWidth  = 10.0
@@ -62,7 +61,7 @@ type item interface {
 	SetLabel(s string)
 	Label() string
 	Align() (float64, float64)
-	Copy() item
+	Copy() (item, map[item]item)
 	IsSelected() bool
 }
 
@@ -97,8 +96,8 @@ type transition struct {
 type group struct {
 	*geometry.Rect
 	model     *teg
-	inputs    map[*transition]bool
-	outputs   map[*transition]bool
+	inputs    []*transition
+	outputs   []*transition
 	label     string
 	collapsed bool
 	parent    *teg
@@ -125,8 +124,8 @@ func newTransition(x, y float64) *transition {
 func newGroup() *group {
 	return &group{
 		model:   newTeg(),
-		inputs:  make(map[*transition]bool, 8),
-		outputs: make(map[*transition]bool, 8),
+		inputs:  make([]*transition, 0, 8),
+		outputs: make([]*transition, 0, 8),
 	}
 }
 
@@ -147,10 +146,63 @@ type placesByY struct{ places }
 func (p places) Len() int      { return len(p) }
 func (p places) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 func (p placesByX) Less(i, j int) bool {
-	return p.places[i].Center().X < p.places[j].Center().X
+	diff := p.places[i].Center().X - p.places[j].Center().X
+	if math.Abs(diff) > 1 {
+		return math.Signbit(diff)
+	} else {
+		return p.places[i].Center().Y > p.places[j].Center().Y
+	}
 }
 func (p placesByY) Less(i, j int) bool {
-	return p.places[i].Center().Y < p.places[j].Center().Y
+	diff := p.places[i].Center().Y - p.places[j].Center().Y
+	if math.Abs(diff) > 1 {
+		return math.Signbit(diff)
+	} else {
+		return p.places[i].Center().X > p.places[j].Center().X
+	}
+}
+
+type transitions []*transition
+type transitionsByMedian struct {
+	transitions
+	inputs bool
+}
+
+func (t transitions) Len() int      { return len(t) }
+func (t transitions) Swap(i, j int) { t[i], t[j] = t[j], t[i] }
+func (t transitionsByMedian) Less(i, j int) bool {
+	if t.inputs {
+		h1, h2 := t.transitions[i].horizontal, t.transitions[j].horizontal
+		i1, i2 := t.transitions[i].proxy.out, t.transitions[j].proxy.out
+		diff := places(i2).calcMedian(h2) - places(i1).calcMedian(h1)
+		if math.Abs(diff) > 1 {
+			return !math.Signbit(diff)
+		} else {
+			return places(i2).calcMedian(!h2) < places(i1).calcMedian(!h1)
+		}
+	} else {
+		h1, h2 := t.transitions[i].horizontal, t.transitions[j].horizontal
+		o1, o2 := t.transitions[i].proxy.in, t.transitions[j].proxy.in
+		diff := places(o2).calcMedian(h2) - places(o1).calcMedian(h1)
+		if math.Abs(diff) > 1 {
+			return math.Signbit(diff)
+		} else {
+			return places(o2).calcMedian(!h2) < places(o1).calcMedian(!h1)
+		}
+	}
+}
+
+func (p places) calcMedian(horizontal bool) (median float64) {
+	if horizontal {
+		for i := range p {
+			median += p[i].X()
+		}
+	} else {
+		for i := range p {
+			median += p[i].Y()
+		}
+	}
+	return median / float64(len(p))
 }
 
 func (t *transition) OrderArcs(inbound bool) {
@@ -200,50 +252,78 @@ func (p *place) Shift(dx, dy float64) {
 	p.shiftControls(dx, dy)
 }
 
-func (g *group) Shift(dx, dy float64) {
-	g.Rect.Shift(dx, dy)
-	for it := range g.model.Items() {
-		it.Shift(dx, dy)
+func (t *transition) Shift(dx, dy float64) {
+	t.Rect.Shift(dx, dy)
+	for _, p := range t.in {
+		p.refineControls()
+	}
+	for _, p := range t.out {
+		p.refineControls()
 	}
 }
 
-func (p *place) Copy() item {
+func (g *group) Shift(dx, dy float64) {
+	g.Rect.Shift(dx, dy)
+	for it := range g.model.Items() {
+		if t, ok := it.(*transition); ok && t.proxy != nil {
+			continue
+		}
+		it.Shift(dx, dy)
+	}
+	for _, t := range g.inputs {
+		t.Shift(dx, dy)
+	}
+	for _, t := range g.outputs {
+		t.Shift(dx, dy)
+	}
+}
+
+func (p *place) Copy() (item, map[item]item) {
+	clonemap := make(map[item]item, 1)
 	place := newPlace(p.Center().X, p.Center().Y)
 	place.label = p.label
 	place.parent = p.parent
 	place.counter = p.counter
 	place.timer = p.timer
-	return item(place)
+	clonemap[p] = place
+	return item(place), clonemap
 }
 
-func (t *transition) Copy() item {
+func (t *transition) Copy() (item, map[item]item) {
+	clonemap := make(map[item]item, 1)
 	transition := newTransition(t.Center().X, t.Center().Y)
 	transition.label = t.label
 	transition.parent = t.parent
+	transition.proxy = t.proxy
+	transition.kind = t.kind
 	if t.horizontal {
 		transition.Rotate()
 	}
-	return item(transition)
+	clonemap[t] = transition
+	return item(transition), clonemap
 }
 
-func (g *group) Copy() item {
+func (g *group) Copy() (item, map[item]item) {
 	group := newGroup()
-	/*
-		items := make(map[item]bool, len(g.model.places)+len(g.model.transitions))
-		for _, p := range g.model.places {
-			items[p] = true
-		}
-		for _, t := range g.model.transitions {
-			items[t] = true
-		}
-		group.model.cloneItems(items)
-	*/
-	group.model = g.model
+	items := make(map[item]bool, len(g.model.places)+
+		len(g.model.transitions)+len(g.model.groups))
+	for _, p := range g.model.places {
+		items[p] = true
+	}
+	for _, t := range g.model.transitions {
+		items[t] = true
+	}
+	for _, g := range g.model.groups {
+		items[g] = true
+	}
+	clonemap := group.model.cloneItems(items)
 	group.label = g.label
 	group.parent = g.parent
 	group.collapsed = g.collapsed
 	group.updateBounds()
-	return item(group)
+	group.updateIO(group.parent)
+	group.adjustIO()
+	return item(group), clonemap
 }
 
 func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
@@ -261,12 +341,16 @@ func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
 }
 
 func (t *transition) Align() (float64, float64) {
-	x, y := math.Floor(t.Center().X), math.Floor(t.Center().Y)
+	if t.proxy != nil {
+		return 0, 0 // hack
+	}
+
+	x, y := t.Center().X, t.Center().Y
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	t.Move(x, y)
+	//t.Move(x, y)
 	t.Shift(shiftX, shiftY)
 	for _, p := range t.in {
 		p.refineControls()
@@ -278,24 +362,23 @@ func (t *transition) Align() (float64, float64) {
 }
 
 func (p *place) Align() (float64, float64) {
-	x, y := math.Floor(p.Center().X), math.Floor(p.Center().Y)
+	x, y := p.Center().X, p.Center().Y
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	p.Move(x, y)
+	//p.Move(x, y)
 	p.Shift(shiftX, shiftY)
-	p.shiftControls(shiftX, shiftY)
 	return shiftX, shiftY
 }
 
 func (g *group) Align() (float64, float64) {
-	x, y := math.Floor(g.Center().X), math.Floor(g.Center().Y)
+	x, y := g.Center().X, g.Center().Y
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
 		return 0, 0
 	}
-	g.Move(x, y)
+	//g.Move(x, y)
 	g.Shift(shiftX, shiftY)
 	return shiftX, shiftY
 }
@@ -323,9 +406,17 @@ func (p *place) KindInGroup(items map[item]bool) int {
 	inFound, outFound := false, false
 	if p.in == nil {
 		inFound = true
+	} else if p.in.parent.parent != nil {
+		if items[p.in.parent.parent] {
+			inFound = true
+		}
 	}
 	if p.out == nil {
 		outFound = true
+	} else if p.out.parent.parent != nil {
+		if items[p.out.parent.parent] {
+			outFound = true
+		}
 	}
 	if !inFound || !outFound {
 		for it := range items {
@@ -356,13 +447,13 @@ func (g *group) KindInGroup(items map[item]bool) int {
 	if !outFound || !inFound {
 		for it := range items {
 			if p, ok := it.(*place); ok {
-				for t := range g.inputs {
-					if t == p.out {
+				for _, t := range g.inputs {
+					if t == p.out || t.proxy == p.out {
 						inFound = true
 					}
 				}
-				for t := range g.outputs {
-					if t == p.in {
+				for _, t := range g.outputs {
+					if t == p.in || t.proxy == p.in {
 						outFound = true
 					}
 				}
@@ -376,8 +467,10 @@ func (g *group) KindInGroup(items map[item]bool) int {
 }
 
 func (t *transition) KindInGroup(items map[item]bool) int {
+	if t.proxy != nil {
+		return TransitionInternal
+	}
 	var interlinkIn, interlinkOut, outlinkIn, outlinkOut bool
-
 	for _, p := range t.in {
 		found := false
 		for it := range items {
@@ -432,6 +525,22 @@ func (t *transition) resetProperties() {
 	if t.horizontal {
 		t.Rotate()
 	}
+}
+
+func (g *group) resetProperties() {
+	g.label = ""
+	g.collapsed = false
+	for _, t := range g.inputs {
+		if t.horizontal {
+			t.Rotate()
+		}
+	}
+	for _, t := range g.outputs {
+		if t.horizontal {
+			t.Rotate()
+		}
+	}
+	g.adjustIO()
 }
 
 func (p *place) resetProperties() {
@@ -558,22 +667,44 @@ func (tg *teg) update() {
 
 func (g *group) updateIO(tg *teg) {
 	// cleanup
-	for t := range g.inputs {
-		tg.removeTransition(t)
+	ignored := make(map[*transition]bool, len(tg.transitions))
+	trs := make([]*transition, 0, 256)
+	for _, t := range tg.transitions {
+		for _, t2 := range g.inputs {
+			if t == t2 {
+				ignored[t] = true
+			}
+		}
+		for _, t2 := range g.outputs {
+			if t == t2 {
+				ignored[t] = true
+			}
+		}
 	}
-	for t := range g.outputs {
-		tg.removeTransition(t)
+	for _, t := range tg.transitions {
+		if !ignored[t] {
+			trs = append(trs, t)
+		}
 	}
-	g.inputs = make(map[*transition]bool, len(g.model.transitions))
-	g.outputs = make(map[*transition]bool, len(g.model.transitions))
+	tg.transitions = trs
+	g.inputs = make([]*transition, 0, len(g.model.transitions))
+	g.outputs = make([]*transition, 0, len(g.model.transitions))
 
 	for _, t := range g.model.transitions {
-		kind := t.KindInGroup(g.model.Items())
+		kind := t.kind
 		if kind == TransitionInternal {
-			continue
+			// try to guess
+			kind = t.KindInGroup(g.model.Items())
+			if kind == TransitionInternal {
+				continue
+			}
 		}
-		c := t.Copy().(*transition)
+		it, _ := t.Copy()
+		c := it.(*transition)
 		c.proxy = t
+		c.parent = tg
+		c.kind = TransitionInternal
+		tg.transitions = append(tg.transitions, c)
 		for _, p := range t.in {
 			c.in = append(c.in, p)
 		}
@@ -583,50 +714,49 @@ func (g *group) updateIO(tg *teg) {
 		switch kind {
 		case TransitionInput:
 			t.kind = TransitionInput
-			g.inputs[c] = true
+			g.inputs = append(g.inputs, c)
 		case TransitionOutput:
 			t.kind = TransitionOutput
-			g.outputs[c] = true
+			g.outputs = append(g.outputs, c)
 		}
-		c.parent = tg
-		tg.transitions = append(tg.transitions, c)
 	}
 }
 
 func (g *group) adjustIO() {
-	var i, j float64
-	for t := range g.inputs {
+	sort.Sort(transitionsByMedian{g.inputs, true})
+	sort.Sort(transitionsByMedian{g.outputs, false})
+	var offi, offj float64
+	for _, t := range g.inputs {
+		t.refineSize()
 		if t.horizontal {
 			base := g.X() + GroupMargin
-			t.Move(base+i*GroupIOSpacing, g.Y())
-			i++
+			t.Move(base+offi, g.Y())
+			offi += t.Width() + GroupIOSpacing
 		} else {
-			base := g.Y() + GroupMargin + GroupHeaderHeight
-			t.Move(g.X(), base+j*GroupIOSpacing)
-			t.Align()
-			j++
+			base := g.Y() + GroupMargin
+			t.Move(g.X(), base+offj)
+			offj += t.Height() + GroupIOSpacing
 		}
 	}
-	i, j = 0.0, 0.0
-	for t := range g.outputs {
+	offi, offj = 0.0, 0.0
+	for _, t := range g.outputs {
+		t.refineSize()
 		if t.horizontal {
 			base := g.X() + g.Width() - GroupMargin
-			t.Move(base-i*GroupIOSpacing, g.Y()+g.Height())
-			t.Align()
-			i++
+			t.Move(base-offi, g.Y()+g.Height())
+			offi += t.Width() + GroupIOSpacing
 		} else {
-			base := g.Y() + g.Height() - t.Height() - GroupHeaderHeight
-			t.Move(g.X()+g.Width(), base-j*GroupIOSpacing)
-			t.Align()
-			j++
+			base := g.Y() + g.Height() - GroupMargin
+			t.Move(g.X()+g.Width(), base-offj)
+			offj += t.Height() + GroupIOSpacing
 		}
 	}
 }
 
 func (g *group) updateBounds() {
 	x0, y0, x1, y1 := detectBounds(g.model.Items())
-	x, y := x0-GroupMargin, y0-GroupMargin-GroupHeaderHeight
-	w, h := (x1-x0)+2*GroupMargin, (y1-y0)+2*GroupMargin+GroupHeaderHeight
+	x, y := x0-GroupMargin, y0-GroupMargin
+	w, h := (x1-x0)+2*GroupMargin, (y1-y0)+2*GroupMargin
 
 	k := math.Ceil(w / GridDefaultGap)
 	w = k * GridDefaultGap
@@ -652,6 +782,13 @@ func (tg *teg) addGroup(items map[item]bool) *group {
 	return group
 }
 
+func (tg *teg) flatGroup(g *group) map[item]bool {
+	items := g.model.Items()
+	tg.transferItems(g.model, items)
+	tg.removeGroup(g)
+	return items
+}
+
 func (tg *teg) removePlace(p *place) {
 	if p.in != nil {
 		p.in.unlink(p, false)
@@ -662,6 +799,7 @@ func (tg *teg) removePlace(p *place) {
 	for i, place := range tg.places {
 		if place == p {
 			tg.places = append(tg.places[:i], tg.places[i+1:]...)
+			return
 		}
 	}
 }
@@ -674,17 +812,60 @@ func (tg *teg) addTransition(x, y float64) *transition {
 }
 
 func (tg *teg) removeTransition(t *transition) {
-	for _, place := range t.in {
-		place.out = nil
+	for _, p := range t.in {
+		p.out = nil
 	}
-	for _, place := range t.out {
-		place.in = nil
+	for _, p := range t.out {
+		p.in = nil
 	}
-	for i, transition := range tg.transitions {
-		if transition == t {
+	for i, t2 := range tg.transitions {
+		if t2 == t {
 			tg.transitions = append(tg.transitions[:i], tg.transitions[i+1:]...)
+			return
 		}
 	}
+}
+
+func (tg *teg) removeGroup(g *group) {
+	ignored := make(map[*transition]bool, len(tg.transitions))
+	trs := make([]*transition, 0, 256)
+	for _, t := range tg.transitions {
+		for _, t2 := range g.inputs {
+			if t == t2 {
+				ignored[t] = true
+			}
+		}
+		for _, t2 := range g.outputs {
+			if t == t2 {
+				ignored[t] = true
+			}
+		}
+	}
+	for _, t := range tg.transitions {
+		if !ignored[t] {
+			trs = append(trs, t)
+		}
+	}
+	tg.transitions = trs
+	g.inputs = nil
+	g.outputs = nil
+	for _, t := range g.model.transitions {
+		g.model.removeTransition(t)
+	}
+	for _, p := range g.model.places {
+		g.model.removePlace(p)
+	}
+	for _, gg := range g.model.groups {
+		g.model.removeGroup(gg)
+	}
+	for i, gg := range tg.groups {
+		if gg == g {
+			tg.groups = append(tg.groups[:i], tg.groups[i+1:]...)
+			return
+		}
+	}
+	g.parent = nil
+	g.model.parent = nil
 }
 
 func (tg *teg) fakeData() {
@@ -756,10 +937,10 @@ func (tg *teg) deselectAll() {
 func (tg *teg) deselectItem(it item) {
 	delete(tg.selected, it)
 	if g, ok := it.(*group); ok {
-		for t := range g.inputs {
+		for _, t := range g.inputs {
 			delete(tg.selected, t)
 		}
-		for t := range g.outputs {
+		for _, t := range g.outputs {
 			delete(tg.selected, t)
 		}
 	}
@@ -770,10 +951,10 @@ func (tg *teg) selectItem(it item) {
 		tg.selected[it] = true
 	}
 	if g, ok := it.(*group); ok {
-		for t := range g.inputs {
+		for _, t := range g.inputs {
 			tg.selected[t] = true
 		}
-		for t := range g.outputs {
+		for _, t := range g.outputs {
 			tg.selected[t] = true
 		}
 	}
@@ -840,13 +1021,27 @@ func (t *transition) isLinked(p *place, inbound bool) bool {
 	return p.in == t
 }
 
+func (t *transition) refineSize() {
+	if t.horizontal {
+		w := calcTransitionHeight(len(t.in), len(t.out))
+		t.Resize(w, TransitionWidth) // rotated
+	} else {
+		h := calcTransitionHeight(len(t.in), len(t.out))
+		t.Resize(TransitionWidth, h) // normal
+	}
+}
+
 func (t *transition) link(p *place, inbound bool) {
 	if inbound && t.kind == TransitionInput {
 		return
 	} else if !inbound && t.kind == TransitionOutput {
 		return
 	}
+	var tg *teg
+	var g *group
 	if t.proxy != nil {
+		tg = t.parent
+		g = t.proxy.parent.parent
 		t = t.proxy
 	}
 	if t.isLinked(p, inbound) {
@@ -866,20 +1061,21 @@ func (t *transition) link(p *place, inbound bool) {
 		p.resetControlPoint(true)
 		changed = true
 	}
-
 	if changed {
-		if t.horizontal {
-			w := calcTransitionHeight(len(t.in), len(t.out))
-			t.Resize(w, TransitionWidth) // rotated
-		} else {
-			h := calcTransitionHeight(len(t.in), len(t.out))
-			t.Resize(TransitionWidth, h) // normal
+		t.refineSize()
+		if g != nil {
+			g.updateIO(tg)
+			g.adjustIO()
 		}
 	}
 }
 
 func (t *transition) unlink(p *place, inbound bool) {
+	var tg *teg
+	var g *group
 	if t.proxy != nil {
+		tg = t.parent
+		g = t.proxy.parent.parent
 		t = t.proxy
 	}
 	if !t.isLinked(p, inbound) {
@@ -893,6 +1089,7 @@ func (t *transition) unlink(p *place, inbound bool) {
 				t.in = append(t.in[:i], t.in[i+1:]...)
 			}
 		}
+		t.OrderArcs(true)
 		p.outControl = nil
 		changed = true
 	} else if !inbound && p.in != nil {
@@ -902,17 +1099,15 @@ func (t *transition) unlink(p *place, inbound bool) {
 				t.out = append(t.out[:i], t.out[i+1:]...)
 			}
 		}
+		t.OrderArcs(false)
 		p.inControl = nil
 		changed = true
 	}
-
 	if changed {
-		if t.horizontal {
-			w := calcTransitionHeight(len(t.in), len(t.out))
-			t.Resize(w, TransitionWidth) // rotated
-		} else {
-			h := calcTransitionHeight(len(t.in), len(t.out))
-			t.Resize(TransitionWidth, h) // normal
+		t.refineSize()
+		if g != nil {
+			g.updateIO(tg)
+			g.adjustIO()
 		}
 	}
 }
@@ -968,40 +1163,70 @@ func (tg *teg) transferItems(tg2 *teg, items map[item]bool) {
 
 func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 	clones = make(map[item]item, len(items))
+	ignore := make(map[item]bool, len(items))
 	for it := range items {
 		if t, ok := it.(*transition); ok {
-			tNew := t.Copy().(*transition)
+			if t.proxy != nil {
+				ignore[t] = true
+				continue
+			}
+			it, _ := t.Copy()
+			tNew := it.(*transition)
+			tNew.parent = tg
 			clones[t] = tNew
 			tg.transitions = append(tg.transitions, tNew)
 			for _, p := range t.in {
 				if _, ok := items[p]; ok {
-					var pNew *place
-					if pNew, ok = clones[p].(*place); !ok {
-						pNew = p.Copy().(*place)
+					if clone, ok := clones[p]; !ok {
+						clone, _ = p.Copy()
+						pNew := clone.(*place)
+						pNew.parent = tg
 						clones[p] = pNew
 						tg.places = append(tg.places, pNew)
-					}
-					tNew.link(pNew, true)
-					if p.outControl.modified {
-						pNew.outControl.Move(p.outControl.Center().X, p.outControl.Center().Y)
-						pNew.outControl.modified = true
+
+						tNew.link(pNew, true)
+						if p.outControl.modified {
+							pNew.outControl.Move(p.outControl.Center().X, p.outControl.Center().Y)
+							pNew.outControl.modified = true
+						}
 					}
 				}
 			}
 			for _, p := range t.out {
 				if _, ok := items[p]; ok {
-					var pNew *place
-					if pNew, ok = clones[p].(*place); !ok {
-						pNew = p.Copy().(*place)
+					if clone, ok := clones[p]; !ok {
+						clone, _ = p.Copy()
+						pNew := clone.(*place)
+						pNew.parent = tg
 						clones[p] = pNew
 						tg.places = append(tg.places, pNew)
-					}
-					tNew.link(pNew, false)
-					if p.inControl.modified {
-						pNew.inControl.Move(p.inControl.Center().X, p.inControl.Center().Y)
-						pNew.inControl.modified = true
+
+						tNew.link(pNew, false)
+						if p.inControl.modified {
+							pNew.inControl.Move(p.inControl.Center().X, p.inControl.Center().Y)
+							pNew.inControl.modified = true
+						}
 					}
 				}
+			}
+			// adjust position (size changed)
+			tNew.Move(t.Center().X, t.Center().Y)
+		}
+	}
+	for k := range ignore {
+		delete(items, k)
+	}
+	for k := range clones {
+		delete(items, k)
+	}
+	for it := range items {
+		if p, ok := it.(*place); ok {
+			if clone, ok := clones[p]; !ok {
+				clone, _ = p.Copy()
+				pNew := clone.(*place)
+				pNew.parent = tg
+				clones[p] = pNew
+				tg.places = append(tg.places, pNew)
 			}
 		}
 	}
@@ -1009,12 +1234,34 @@ func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 		delete(items, k)
 	}
 	for it := range items {
-		if p, ok := it.(*place); ok {
-			var pNew *place
-			if pNew, ok = clones[p].(*place); !ok {
-				pNew = p.Copy().(*place)
-				clones[p] = pNew
-				tg.places = append(tg.places, pNew)
+		if g, ok := it.(*group); ok {
+			it, gClones := g.Copy()
+			gNew := it.(*group)
+			gNew.parent = tg
+			gNew.model.parent = gNew
+			clones[g] = gNew
+			tg.groups = append(tg.groups, gNew)
+			for _, t := range g.inputs {
+				for _, p := range t.in {
+					newPlace := clones[p].(*place)
+					newProxy := gClones[t.proxy].(*transition)
+					for _, t2 := range gNew.inputs {
+						if t2.proxy == newProxy {
+							t2.link(newPlace, true)
+						}
+					}
+				}
+			}
+			for _, t := range g.outputs {
+				for _, p := range t.out {
+					newPlace := clones[p].(*place)
+					newProxy := gClones[t.proxy].(*transition)
+					for _, t2 := range gNew.outputs {
+						if t2.proxy == newProxy {
+							t2.link(newPlace, false)
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1023,18 +1270,23 @@ func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 
 func (tg *teg) findDrawable(x float64, y float64) (interface{}, bool) {
 	for _, it := range tg.places {
-		switch {
-		case it.Has(x, y):
-			return item(it), true
-		case tg.isSelected(it):
+		if tg.isSelected(it) {
 			if it.in != nil && it.inControl.Has(x, y) {
 				return it.inControl, true
 			} else if it.out != nil && it.outControl.Has(x, y) {
 				return it.outControl, true
 			}
 		}
+		if it.Has(x, y) {
+			return item(it), true
+		}
 	}
 	for _, it := range tg.transitions {
+		if it.Has(x, y) {
+			return it, true
+		}
+	}
+	for _, it := range tg.groups {
 		if it.Has(x, y) {
 			return it, true
 		}

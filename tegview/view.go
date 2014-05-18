@@ -79,14 +79,5 @@ func (v *View) Show() (closed chan struct{}) {
 	v.control.handleEvents()
 	v.win.Show()
 
-	/*
-		f, err := os.Create("teg.prof")
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-		<-v.closed
-	*/
 	return v.closed
 }

@@ -36,6 +36,8 @@ const (
 	KeyCodeN = 78
 	KeyCodeK = 75
 	KeyCodeM = 77
+	KeyCodeO = 79
+	KeyCodeZ = 90
 )
 
 type mouseEvent struct {
@@ -156,37 +158,20 @@ func (c *Ctrl) handleEvents() {
 						} else {
 							it := smth.(item)
 							//x0, y0 = it.Center().X, it.Center().Y
-							var selected bool
 							if len(c.model.selected) > 1 {
 								if c.model.isSelected(it) && c.ModifierKeyControl {
 									c.model.deselectItem(it)
 								} else if c.ModifierKeyControl {
 									c.model.selectItem(it)
-									selected = true
 								} else if !c.model.isSelected(it) {
 									c.model.deselectAll()
 									c.model.selectItem(it)
-									selected = true
 								}
 							} else if !c.ModifierKeyControl {
 								c.model.deselectAll()
 								c.model.selectItem(it)
-								selected = true
 							} else {
 								c.model.selectItem(it)
-								selected = true
-							}
-							if selected {
-								if t, ok := it.(*transition); ok && t.proxy != nil {
-									g := t.proxy.parent.parent
-									for t := range g.inputs {
-										c.model.deselectItem(t)
-									}
-									for t := range g.outputs {
-										c.model.deselectItem(t)
-									}
-									c.model.selectItem(g) // select group
-								}
 							}
 						}
 						c.model.update()
@@ -222,42 +207,28 @@ func (c *Ctrl) handleEvents() {
 							c.model.update()
 							continue
 						}
-
 						toOrder := make(map[*transition]bool, len(c.model.transitions))
-						toResetIn := make(map[*place]bool, len(c.model.places))
-						toResetOut := make(map[*place]bool, len(c.model.places))
 						for it := range c.model.selected {
-							it.Shift(dx, dy)
 							if p, ok := it.(*place); ok {
+								p.Shift(dx, dy)
 								if p.in != nil {
 									toOrder[p.in] = true
 								}
 								if p.out != nil {
 									toOrder[p.out] = true
 								}
-							} else if transition, ok := it.(*transition); ok {
-								toOrder[transition] = true
-								for _, p := range transition.out {
-									if !p.inControl.modified {
-										toResetIn[p] = true
-									}
+							} else if t, ok := it.(*transition); ok {
+								if t.proxy == nil {
+									t.Shift(dx, dy)
+									toOrder[t] = true
 								}
-								for _, p := range transition.in {
-									if !p.outControl.modified {
-										toResetOut[p] = true
-									}
-								}
+							} else {
+								it.Shift(dx, dy)
 							}
 						}
 						for t := range toOrder {
 							t.OrderArcs(true)
 							t.OrderArcs(false)
-						}
-						for p := range toResetIn {
-							p.resetControlPoint(true)
-						}
-						for p := range toResetOut {
-							p.resetControlPoint(false)
 						}
 						c.model.update()
 					} else {
@@ -379,19 +350,7 @@ func (c *Ctrl) handleEvents() {
 							}
 						}
 					} else {
-						first := true
-						var dx, dy float64
-						for it := range c.model.selected {
-							if first {
-								dx, dy = it.Align()
-								first = false
-							} else {
-								it.Shift(dx, dy)
-								if p, ok := it.(*place); ok {
-									p.shiftControls(dx, dy)
-								}
-							}
-						}
+						c.alignItems(c.model.selected)
 					}
 
 					focused = nil
@@ -406,15 +365,26 @@ func (c *Ctrl) handleEvents() {
 					if focused != nil {
 						c.model.deselectAll()
 						c.model.selectItem(focused.(item))
-						if transition, ok := focused.(*transition); ok {
-							transition.Rotate()
+						if t, ok := focused.(*transition); ok {
+							t.Rotate()
+							if t.proxy != nil {
+								g := t.proxy.parent.parent
+								g.adjustIO()
+								for _, t := range g.inputs {
+									c.model.deselectItem(t)
+								}
+								for _, t := range g.outputs {
+									c.model.deselectItem(t)
+								}
+								c.model.selectItem(g) // select group
+							}
 							c.model.update()
 						}
-						if place, ok := focused.(*place); ok {
+						if p, ok := focused.(*place); ok {
 							if c.ModifierKeyAlt {
-								place.timer++
+								p.timer++
 							} else {
-								place.counter++
+								p.counter++
 							}
 							c.model.update()
 						}
@@ -427,31 +397,81 @@ func (c *Ctrl) handleEvents() {
 	}()
 }
 
+func (c *Ctrl) alignItems(items map[item]bool) {
+	first := true
+	var dx, dy float64
+	toOrder := make(map[*transition]bool, len(c.model.transitions))
+	for it := range items {
+		if first {
+			dx, dy = it.Align()
+			if p, ok := it.(*place); ok {
+				if p.in != nil {
+					toOrder[p.in] = true
+				}
+				if p.out != nil {
+					toOrder[p.out] = true
+				}
+			}
+			first = false
+			continue
+		}
+		if p, ok := it.(*place); ok {
+			p.Shift(dx, dy)
+			if p.in != nil {
+				toOrder[p.in] = true
+			}
+			if p.out != nil {
+				toOrder[p.out] = true
+			}
+		} else if t, ok := it.(*transition); ok {
+			if t.proxy == nil {
+				t.Shift(dx, dy)
+			}
+		} else {
+			it.Shift(dx, dy)
+		}
+	}
+	for t := range toOrder {
+		t.OrderArcs(true)
+		t.OrderArcs(false)
+	}
+}
+
 func (c *Ctrl) groupItems(items map[item]bool) {
 	for it := range items {
 		switch it.(type) {
 		case *transition:
 			if it.(*transition).KindInGroup(items) == TransitionExposed {
+				log.Println("Trans noway", it.Label())
 				return // no way
 			}
 		case *place:
 			if it.(*place).KindInGroup(items) == PlaceExposed {
+				log.Println("Place noway", it.Label())
 				return // no way
 			}
 		case *group:
 			if it.(*group).KindInGroup(items) == GroupExposed {
+				log.Println("Group noway", it.Label())
 				return // no way
 			}
 		}
 	}
-	group := c.model.addGroup(items)
-	group.updateBounds()
-	group.updateIO(c.model)
-	group.Align()
-	group.adjustIO()
+	g := c.model.addGroup(items)
+	g.updateBounds()
+	g.updateIO(c.model)
+	g.Align()
+	g.adjustIO()
 	c.model.deselectAll()
+	c.model.selectItem(g)
+}
+
+func (c *Ctrl) ungroupItems(g *group) {
+	c.model.deselectAll()
+	items := c.model.flatGroup(g)
+	c.alignItems(items)
 	for it := range items {
-		group.model.selected[it] = true
+		c.model.selectItem(it)
 	}
 }
 
@@ -461,15 +481,44 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	if c.ModifierKeyControl {
 		switch ev.keycode {
 		case KeyCodeG:
-			if len(c.model.selected) > 0 {
+			proxies := 0
+			for it := range c.model.selected {
+				if t, ok := it.(*transition); ok && t.proxy != nil {
+					proxies++
+				}
+			}
+			switch l := len(c.model.selected) - proxies; {
+			case l > 1:
 				c.groupItems(c.model.selected)
 				c.model.update()
+			case l == 1:
+				for it := range c.model.selected {
+					if g, ok := it.(*group); ok {
+						c.ungroupItems(g)
+						c.model.update()
+						return
+					}
+				}
 			}
 			return
 		}
 
 		for it := range c.model.selected {
-			if p, ok := it.(*place); ok {
+			if g, ok := it.(*group); ok {
+				switch ev.keycode {
+				case KeyCodeF:
+					g.resetProperties()
+					c.model.deselectItem(it)
+					updated = true
+				case KeyCodeZ:
+					g.collapsed = !g.collapsed
+					updated = true
+				case 16777219, 16777223, 8:
+					c.model.deselectItem(it)
+					c.model.removeGroup(g)
+					updated = true
+				}
+			} else if p, ok := it.(*place); ok {
 				switch ev.keycode {
 				case KeyCodeJ:
 					p.counter++
@@ -477,6 +526,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 					p.counter--
 				case KeyCodeF:
 					p.resetProperties()
+					c.model.deselectItem(it)
 				case KeyCodeK:
 					p.timer++
 				case KeyCodeM:
@@ -500,6 +550,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 				switch ev.keycode {
 				case KeyCodeF:
 					t.resetProperties()
+					c.model.deselectItem(it)
 					updated = true
 				case KeyCodeT:
 					t.nextKind()
