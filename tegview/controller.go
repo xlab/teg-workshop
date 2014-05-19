@@ -202,6 +202,7 @@ func (c *Ctrl) handleEvents() {
 						}
 						c.model.update()
 					} else if focused != nil {
+						c.model.util.kind = UtilNone
 						if point, cp := focused.(*controlPoint); cp {
 							point.Move(x, y)
 							c.model.update()
@@ -278,6 +279,13 @@ func (c *Ctrl) handleEvents() {
 								c.model.selectItem(t)
 							} else {
 								c.model.deselectItem(t)
+							}
+						}
+						for _, g := range c.model.groups {
+							if g.Bound().Intersect(rect) {
+								c.model.selectItem(g)
+							} else {
+								c.model.deselectItem(g)
 							}
 						}
 						c.model.update()
@@ -388,6 +396,14 @@ func (c *Ctrl) handleEvents() {
 							}
 							c.model.update()
 						}
+						if g, ok := focused.(*group); ok {
+							if g.folded {
+								c.model.unfoldGroup(g)
+							} else {
+								c.model.foldGroup(g)
+							}
+							c.model.update()
+						}
 					}
 				}
 			default:
@@ -442,26 +458,22 @@ func (c *Ctrl) groupItems(items map[item]bool) {
 		switch it.(type) {
 		case *transition:
 			if it.(*transition).KindInGroup(items) == TransitionExposed {
-				log.Println("Trans noway", it.Label())
 				return // no way
 			}
 		case *place:
 			if it.(*place).KindInGroup(items) == PlaceExposed {
-				log.Println("Place noway", it.Label())
 				return // no way
 			}
 		case *group:
 			if it.(*group).KindInGroup(items) == GroupExposed {
-				log.Println("Group noway", it.Label())
 				return // no way
 			}
 		}
 	}
 	g := c.model.addGroup(items)
-	g.updateBounds()
 	g.updateIO(c.model)
-	g.Align()
 	g.adjustIO()
+	g.Align()
 	c.model.deselectAll()
 	c.model.selectItem(g)
 }
@@ -511,7 +523,7 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 					c.model.deselectItem(it)
 					updated = true
 				case KeyCodeZ:
-					g.collapsed = !g.collapsed
+					g.folded = !g.folded
 					updated = true
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)

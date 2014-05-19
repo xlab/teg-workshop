@@ -131,30 +131,39 @@ func (tr *tegRenderer) process(model *teg) {
 
 func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 	for _, p := range tg.places {
-		tr.renderPlace(p)
+		tr.renderPlace(p, nested)
 	}
 	for _, t := range tg.transitions {
 		if !nested || t.kind == TransitionInternal {
-			tr.renderTransition(t)
-
-			for i, p := range t.in {
-				tr.renderArc(t, p, true, i)
+			tr.renderTransition(t, nested)
+			if t.proxy == nil || t.proxy.parent.parent != nil &&
+				!t.proxy.parent.parent.folded {
+				for i, p := range t.in {
+					tr.renderArc(t, p, true, i)
+				}
 			}
-			for i, p := range t.out {
-				tr.renderArc(t, p, false, i)
+			if t.proxy == nil || t.proxy.parent.parent != nil &&
+				!t.proxy.parent.parent.folded {
+				for i, p := range t.out {
+					tr.renderArc(t, p, false, i)
+				}
 			}
 		}
 	}
 	for _, g := range tg.groups {
-		tr.renderGroup(g)
+		tr.renderGroup(g, nested)
 	}
 	if !nested && tr.ctrl.ModifierKeyAlt {
 		for _, t := range tg.transitions {
-			for i, p := range t.in {
-				tr.renderConnection(t, p, true, i)
+			if t.proxy == nil || t.kind == TransitionOutput {
+				for i, p := range t.in {
+					tr.renderConnection(t, p, true, i)
+				}
 			}
-			for i, p := range t.out {
-				tr.renderConnection(t, p, false, i)
+			if t.proxy == nil || t.kind == TransitionInput {
+				for i, p := range t.out {
+					tr.renderConnection(t, p, false, i)
+				}
 			}
 		}
 	}
@@ -163,7 +172,7 @@ func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
 	}
 }
 
-func (tr *tegRenderer) renderGroup(g *group) {
+func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	frame := &render.RoundedRect{
 		Style: &render.Style{
 			LineWidth:   tr.scale(2.0),
@@ -180,7 +189,9 @@ func (tr *tegRenderer) renderGroup(g *group) {
 		frame.Style.StrokeStyle = ColorSelected
 	}
 	tr.buf.RRects.Put(frame)
-	tr.renderModel(g.model, true)
+	if !g.folded {
+		tr.renderModel(g.model, true)
+	}
 }
 
 func (tr *tegRenderer) renderUtility(u *utility) {
@@ -217,7 +228,7 @@ func (tr *tegRenderer) renderUtility(u *utility) {
 	}
 }
 
-func (tr *tegRenderer) renderPlace(p *place) {
+func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 	x, y := p.X(), p.Y()
 	pad := &render.Circle{
 		Style: &render.Style{
@@ -253,12 +264,12 @@ func (tr *tegRenderer) renderPlace(p *place) {
 	}
 	tr.buf.Circles.Put(pad)
 	tr.renderPlaceValue(x+Padding, y+Padding, p.Width()-Padding*2, p.IsSelected(), p.counter, p.timer)
-	if len(p.label) > 0 {
+	if len(p.label) > 0 && !nested {
 		tr.renderText(x, y+p.Height()+TextFontSize, p.Width(), false, p.label)
 	}
 }
 
-func (tr *tegRenderer) renderTransition(t *transition) {
+func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 	x, y := t.X(), t.Y()
 	rect := &render.Rect{
 		Style: &render.Style{
@@ -272,7 +283,7 @@ func (tr *tegRenderer) renderTransition(t *transition) {
 	}
 	var knob *render.Rect
 	kw, kh := Margin/5, Margin/17
-	if t.kind == TransitionInput {
+	if t.proxy == nil && t.kind == TransitionInput {
 		rect.Style.FillStyle = ColorTransitionIO
 		knob = &render.Rect{
 			Style: &render.Style{
@@ -293,7 +304,7 @@ func (tr *tegRenderer) renderTransition(t *transition) {
 			knob.H = tr.scale(kh)
 		}
 		knob.X, knob.Y = tr.absX(knob.X), tr.absY(knob.Y)
-	} else if t.kind == TransitionOutput {
+	} else if t.proxy == nil && t.kind == TransitionOutput {
 		rect.Style.FillStyle = ColorTransitionIO
 		knob = &render.Rect{
 			Style: &render.Style{
@@ -341,7 +352,7 @@ func (tr *tegRenderer) renderTransition(t *transition) {
 		tr.buf.Rects.Put(knob)
 	}
 	tr.buf.Rects.Put(rect)
-	if len(t.label) > 0 {
+	if len(t.label) > 0 && !nested {
 		if t.horizontal {
 			tr.renderText(x+t.Width()+TextFontSize/2, y+t.Height()/2, t.Height(), true, t.label)
 		} else {
