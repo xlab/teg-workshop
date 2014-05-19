@@ -15,15 +15,17 @@ const (
 )
 
 const (
-	ColorSelected      = "#b10000"
-	ColorDefault       = "#000000"
-	ColorTransitionIO  = "#2980b9"
-	ColorComments      = "#7f8c8d"
-	ColorGroupFrame    = "#34495e"
-	ColorUtility       = "#3498db"
-	ColorUtilityShadow = "#202980b9"
-	ColorControlPoint  = "#f1c40f"
-	ColorTransitionPad = "#90bdc3c7"
+	ColorSelected        = "#b10000"
+	ColorDefault         = "#000000"
+	ColorTransitionIO    = "#2980b9"
+	ColorComments        = "#7f8c8d"
+	ColorGroupFrame      = "#34495e"
+	ColorGroupBg         = "#2034495e"
+	ColorGroupBgSelected = "#20e74c3c"
+	ColorUtility         = "#3498db"
+	ColorUtilityShadow   = "#202980b9"
+	ColorControlPoint    = "#f1c40f"
+	ColorTransitionPad   = "#90bdc3c7"
 )
 
 const (
@@ -130,40 +132,30 @@ func (tr *tegRenderer) process(model *teg) {
 }
 
 func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
+	for _, g := range tg.groups {
+		tr.renderGroup(g, nested)
+	}
 	for _, p := range tg.places {
 		tr.renderPlace(p, nested)
 	}
 	for _, t := range tg.transitions {
 		if !nested || t.kind == TransitionInternal {
 			tr.renderTransition(t, nested)
-			if t.proxy == nil || t.proxy.parent.parent != nil &&
-				!t.proxy.parent.parent.folded {
-				for i, p := range t.in {
-					tr.renderArc(t, p, true, i)
-				}
+			for i, p := range t.in {
+				tr.renderArc(t, p, true, i)
 			}
-			if t.proxy == nil || t.proxy.parent.parent != nil &&
-				!t.proxy.parent.parent.folded {
-				for i, p := range t.out {
-					tr.renderArc(t, p, false, i)
-				}
+			for i, p := range t.out {
+				tr.renderArc(t, p, false, i)
 			}
 		}
 	}
-	for _, g := range tg.groups {
-		tr.renderGroup(g, nested)
-	}
 	if !nested && tr.ctrl.ModifierKeyAlt {
 		for _, t := range tg.transitions {
-			if t.proxy == nil || t.kind == TransitionOutput {
-				for i, p := range t.in {
-					tr.renderConnection(t, p, true, i)
-				}
+			for i, p := range t.in {
+				tr.renderConnection(t, p, true, i)
 			}
-			if t.proxy == nil || t.kind == TransitionInput {
-				for i, p := range t.out {
-					tr.renderConnection(t, p, false, i)
-				}
+			for i, p := range t.out {
+				tr.renderConnection(t, p, false, i)
 			}
 		}
 	}
@@ -178,6 +170,8 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 			LineWidth:   tr.scale(2.0),
 			Stroke:      true,
 			StrokeStyle: ColorGroupFrame,
+			Fill:        true,
+			FillStyle:   ColorGroupBg,
 		},
 		X: tr.absX(tr.scale(g.X())),
 		Y: tr.absY(tr.scale(g.Y())),
@@ -187,8 +181,37 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	}
 	if g.IsSelected() {
 		frame.Style.StrokeStyle = ColorSelected
+		frame.Style.FillStyle = ColorGroupBgSelected
 	}
 	tr.buf.RRects.Put(frame)
+	for _, t := range g.inputs {
+		tr.renderTransition(t, nested)
+		for i, p := range t.in {
+			tr.renderArc(t, p, true, i)
+			if !nested && tr.ctrl.ModifierKeyAlt {
+				tr.renderConnection(t, p, true, i)
+			}
+		}
+		if !g.folded {
+			for i, p := range t.out {
+				tr.renderArc(t, p, false, i)
+			}
+		}
+	}
+	for _, t := range g.outputs {
+		tr.renderTransition(t, nested)
+		if !g.folded {
+			for i, p := range t.in {
+				tr.renderArc(t, p, true, i)
+			}
+		}
+		for i, p := range t.out {
+			tr.renderArc(t, p, false, i)
+			if !nested && tr.ctrl.ModifierKeyAlt {
+				tr.renderConnection(t, p, false, i)
+			}
+		}
+	}
 	if !g.folded {
 		tr.renderModel(g.model, true)
 	}
@@ -265,7 +288,13 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 	tr.buf.Circles.Put(pad)
 	tr.renderPlaceValue(x+Padding, y+Padding, p.Width()-Padding*2, p.IsSelected(), p.counter, p.timer)
 	if len(p.label) > 0 && !nested {
-		tr.renderText(x, y+p.Height()+TextFontSize, p.Width(), false, p.label)
+		cfg := textConfig{
+			x: x, y: y + p.Height() + TextFontSize,
+			room: p.Width(), color: ColorComments,
+			text:     fmt.Sprintf("// %s", p.label),
+			breaklen: 16,
+		}
+		tr.renderText(&cfg)
 	}
 }
 
@@ -352,11 +381,22 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 		tr.buf.Rects.Put(knob)
 	}
 	tr.buf.Rects.Put(rect)
-	if len(t.label) > 0 && !nested {
+	if len(t.label) > 0 && !nested && t.proxy == nil {
+		cfg := textConfig{
+			text:     fmt.Sprintf("// %s", t.label),
+			breaklen: 16, color: ColorComments,
+		}
 		if t.horizontal {
-			tr.renderText(x+t.Width()+TextFontSize/2, y+t.Height()/2, t.Height(), true, t.label)
+			cfg.x = x + t.Width() + TextFontSize/2
+			cfg.y = y + t.Height()/2
+			cfg.room = t.Height()
+			cfg.valign = true
+			tr.renderText(&cfg)
 		} else {
-			tr.renderText(x, y+t.Height()+TextFontSize, t.Width(), false, t.label)
+			cfg.x = x
+			cfg.y = y + t.Height() + TextFontSize
+			cfg.room = t.Width()
+			tr.renderText(&cfg)
 		}
 	}
 }
@@ -483,12 +523,19 @@ func (tr *tegRenderer) renderConnection(t *transition, p *place, inbound bool, i
 	tr.buf.Chains.Put(chain)
 }
 
-func (tr *tegRenderer) renderText(x, y, room float64, valign bool, text string) {
-	// commentary sign
-	text = fmt.Sprintf("// %s", text)
+type textConfig struct {
+	x, y, room float64
+	valign     bool
+	vertical   bool
+	color      string
+	text       string
+	breaklen   int
+}
 
-	// detect all substrings with  1 <= length <= 16
-	chunks := regexp.MustCompile(".{1,16}").FindAllString(text, -1)
+func (tr *tegRenderer) renderText(cfg *textConfig) {
+	// detect all substrings with  1 <= length <= N
+	rx := regexp.MustCompile(fmt.Sprintf(".{1,%d}", cfg.breaklen))
+	chunks := rx.FindAllString(cfg.text, -1)
 
 	var offset float64
 	for i := range chunks {
@@ -498,20 +545,21 @@ func (tr *tegRenderer) renderText(x, y, room float64, valign bool, text string) 
 				Style: &render.Style{
 					LineWidth: tr.scale(1.0),
 					Fill:      true,
-					FillStyle: ColorComments,
+					FillStyle: cfg.color,
 				},
 				Font:     TextFontNormal,
 				FontSize: tr.scale(TextFontSize),
 				Oblique:  true,
 				Label:    str,
+				Vertical: cfg.vertical,
 			}
-			if valign {
-				label.X = tr.absX(tr.scale(x))
-				label.Y = tr.absY(tr.scale(y + room/2 + offset))
+			if cfg.valign {
+				label.X = tr.absX(tr.scale(cfg.x))
+				label.Y = tr.absY(tr.scale(cfg.y + cfg.room/2 + offset))
 			} else {
 				label.Align = render.TextAlignCenter
-				label.X = tr.absX(tr.scale(x + room/2))
-				label.Y = tr.absY(tr.scale(y + offset + 2*Padding))
+				label.X = tr.absX(tr.scale(cfg.x + cfg.room/2))
+				label.Y = tr.absY(tr.scale(cfg.y + offset + 2*Padding))
 			}
 			tr.buf.Texts.Put(label)
 			offset += TextFontSize + Padding

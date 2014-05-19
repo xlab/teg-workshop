@@ -359,9 +359,9 @@ ApplicationWindow {
                     "lineWidth": style.lineWidth,
                     "fill": style.fill, "stroke": style.stroke,
                     "strokeStyle": style.strokeStyle, "fillStyle": style.fillStyle,
-                    "align": it.align, "fontSize": it.fontSize,
+                    "align": it.align, "vertical": it.vertical, "fontSize": it.fontSize,
                     "oblique": it.oblique, "font": it.font,
-                    "x": it.x, "y": it.y, "label": it.label,
+                    "x": it.x, "y": it.y, "label": it.label
                 }
             }
 

@@ -71,6 +71,7 @@ type Text struct {
 	X, Y     float64
 	FontSize float64
 	Oblique  bool
+	Vertical bool
 	Align    string
 	Font     string
 	Label    string

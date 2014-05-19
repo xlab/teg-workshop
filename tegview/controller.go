@@ -326,11 +326,9 @@ func (c *Ctrl) handleEvents() {
 							// stroking the void, cut the links
 							start := c.model.util.min
 							end := c.model.util.max
-
 							var toUnlink []*place
-							for _, t := range c.model.transitions {
-								toUnlink = make([]*place, 0, len(t.in))
-								for i, p := range t.in {
+							unlink := func(t *transition, p *place, inbound bool, i int) {
+								if inbound {
 									control := p.outControl.Center()
 									borderP := p.BorderPoint(control.X, control.Y, BorderPlaceDist)
 									borderT := t.BorderPoint(true, i)
@@ -338,12 +336,7 @@ func (c *Ctrl) handleEvents() {
 										geometry.CheckSegmentsCrossing(start, end, control, borderT) {
 										toUnlink = append(toUnlink, p)
 									}
-								}
-								for _, p := range toUnlink {
-									t.unlink(p, true)
-								}
-								toUnlink = make([]*place, 0, len(t.out))
-								for i, p := range t.out {
+								} else {
 									control := p.inControl.Center()
 									borderP := p.BorderPoint(control.X, control.Y, BorderPlaceTipDist)
 									borderT := t.BorderPoint(false, i)
@@ -352,10 +345,45 @@ func (c *Ctrl) handleEvents() {
 										toUnlink = append(toUnlink, p)
 									}
 								}
+							}
+							for _, t := range c.model.transitions {
+								toUnlink = make([]*place, 0, len(t.in))
+								for i, p := range t.in {
+									unlink(t, p, true, i)
+								}
+								for _, p := range toUnlink {
+									t.unlink(p, true)
+								}
+								toUnlink = make([]*place, 0, len(t.out))
+								for i, p := range t.out {
+									unlink(t, p, false, i)
+								}
 								for _, p := range toUnlink {
 									t.unlink(p, false)
 								}
 							}
+							for _, g := range c.model.groups {
+								for _, t := range g.inputs {
+									toUnlink = make([]*place, 0, len(t.in))
+									for i, p := range t.in {
+										unlink(t, p, true, i)
+									}
+									for _, p := range toUnlink {
+										t.unlink(p, true)
+									}
+
+								}
+								for _, t := range g.outputs {
+									toUnlink = make([]*place, 0, len(t.out))
+									for i, p := range t.out {
+										unlink(t, p, false, i)
+									}
+									for _, p := range toUnlink {
+										t.unlink(p, false)
+									}
+								}
+							}
+
 						}
 					} else {
 						c.alignItems(c.model.selected)
@@ -378,13 +406,6 @@ func (c *Ctrl) handleEvents() {
 							if t.proxy != nil {
 								g := t.proxy.parent.parent
 								g.adjustIO()
-								for _, t := range g.inputs {
-									c.model.deselectItem(t)
-								}
-								for _, t := range g.outputs {
-									c.model.deselectItem(t)
-								}
-								c.model.selectItem(g) // select group
 							}
 							c.model.update()
 						}
@@ -454,24 +475,30 @@ func (c *Ctrl) alignItems(items map[item]bool) {
 }
 
 func (c *Ctrl) groupItems(items map[item]bool) {
+	data := make(map[item]bool, len(items))
 	for it := range items {
 		switch it.(type) {
 		case *transition:
 			if it.(*transition).KindInGroup(items) == TransitionExposed {
 				return // no way
+			} else if it.(*transition).proxy == nil {
+				data[it] = true
 			}
 		case *place:
 			if it.(*place).KindInGroup(items) == PlaceExposed {
 				return // no way
 			}
+			data[it] = true
 		case *group:
 			if it.(*group).KindInGroup(items) == GroupExposed {
 				return // no way
 			}
+			data[it] = true
+
 		}
 	}
-	g := c.model.addGroup(items)
-	g.updateIO(c.model)
+	g := c.model.addGroup(data)
+	g.updateIO()
 	g.adjustIO()
 	g.Align()
 	c.model.deselectAll()
@@ -520,7 +547,6 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 				switch ev.keycode {
 				case KeyCodeF:
 					g.resetProperties()
-					c.model.deselectItem(it)
 					updated = true
 				case KeyCodeZ:
 					g.folded = !g.folded
@@ -538,7 +564,6 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 					p.counter--
 				case KeyCodeF:
 					p.resetProperties()
-					c.model.deselectItem(it)
 				case KeyCodeK:
 					p.timer++
 				case KeyCodeM:
@@ -562,7 +587,6 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 				switch ev.keycode {
 				case KeyCodeF:
 					t.resetProperties()
-					c.model.deselectItem(it)
 					updated = true
 				case KeyCodeT:
 					t.nextKind()

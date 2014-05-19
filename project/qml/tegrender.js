@@ -82,6 +82,17 @@ function renderBuf(ctx, region, zoom, cache, kind) {
             ctx.lineTo(it.end.x, it.end.y)
             draw(ctx, it.stroke, it.fill)
         } else if(kind === "text") {
+            var x, y
+            if(it.vertical) {
+                x = 0
+                y = 0
+                ctx.save()
+                ctx.translate(it.x, it.y)
+                ctx.rotate(Math.PI/2)
+            } else {
+                x = it.x
+                y = it.y
+            }
             var fontspec = "" + it.fontSize + "px '" + it.font + "'"
             if(it.oblique) {
                 fontspec = "oblique " + fontspec
@@ -89,13 +100,15 @@ function renderBuf(ctx, region, zoom, cache, kind) {
             ctx.font = fontspec
             ctx.textAlign = it.align
             if(it.fill) {
-                ctx.fillText(it.label, it.x, it.y)
+                ctx.fillText(it.label, x, y)
             }
             if(it.stroke) {
-                ctx.strokeText(it.label, it.x, it.y)
+                ctx.strokeText(it.label, x, y)
+            }
+            if(it.vertical) {
+                ctx.restore()
             }
         }
-
         ctx.reset()
     }
 }
@@ -116,8 +129,8 @@ function render(ctx, region, zoom, cache) {
     var rh = region.height
     ctx.clearRect(rx, ry, rw, rh)
 
-    renderBuf(ctx, region, zoom, cache, "circle")
     renderBuf(ctx, region, zoom, cache, "rrect")
+    renderBuf(ctx, region, zoom, cache, "circle")
     renderBuf(ctx, region, zoom, cache, "rect")
     renderBuf(ctx, region, zoom, cache, "line")
     renderBuf(ctx, region, zoom, cache, "bezier")

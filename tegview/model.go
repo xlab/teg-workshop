@@ -266,9 +266,6 @@ func (t *transition) Shift(dx, dy float64) {
 func (g *group) Shift(dx, dy float64) {
 	g.Rect.Shift(dx, dy)
 	for it := range g.model.Items() {
-		if t, ok := it.(*transition); ok && t.proxy != nil {
-			continue
-		}
 		it.Shift(dx, dy)
 	}
 	for _, t := range g.inputs {
@@ -294,7 +291,6 @@ func (t *transition) Copy() (item, map[item]item) {
 	clonemap := make(map[item]item, 1)
 	transition := newTransition(t.Center().X, t.Center().Y)
 	transition.label = t.label
-	transition.parent = t.parent
 	transition.proxy = t.proxy
 	transition.kind = t.kind
 	if t.horizontal {
@@ -321,7 +317,7 @@ func (g *group) Copy() (item, map[item]item) {
 	group.label = g.label
 	group.parent = g.parent
 	group.folded = g.folded
-	group.updateIO(group.parent)
+	group.updateIO()
 	group.adjustIO()
 	return item(group), clonemap
 }
@@ -342,9 +338,8 @@ func (t *transition) BorderPoint(inbound bool, index int) *geometry.Point {
 
 func (t *transition) Align() (float64, float64) {
 	if t.proxy != nil {
-		return 0, 0 // hack
+		return 0, 0 //hack
 	}
-
 	x, y := t.Center().X, t.Center().Y
 	shiftX, shiftY := geometry.Align(x, y, GridDefaultGap)
 	if shiftX == 0 && shiftY == 0 {
@@ -559,13 +554,44 @@ func (p *place) resetProperties() {
 	}
 }
 
+func (t *transition) findProxy(inbound bool) *transition {
+	g := t.parent.parent
+	if g == nil {
+		return nil
+	}
+	if inbound {
+		for _, tt := range g.inputs {
+			if tt.proxy == t {
+				return tt
+			}
+		}
+	} else {
+		for _, tt := range g.outputs {
+			if tt.proxy == t {
+				return tt
+			}
+		}
+	}
+	return nil
+}
+
 func (p *place) resetControlPoint(inbound bool) {
 	if inbound {
-		centerT := p.in.Center()
+		t := p.in
+		proxy := t.findProxy(false)
+		if proxy != nil {
+			t = proxy
+		}
+		centerT := t.Center()
 		point := p.BorderPoint(centerT.X, centerT.Y, 15.0)
 		p.inControl = newControlPoint(point.X, point.Y, false)
 	} else {
-		centerT := p.out.Center()
+		t := p.out
+		proxy := t.findProxy(true)
+		if proxy != nil {
+			t = proxy
+		}
+		centerT := t.Center()
 		point := p.BorderPoint(centerT.X, centerT.Y, 15.0)
 		p.outControl = newControlPoint(point.X, point.Y, false)
 	}
@@ -669,28 +695,7 @@ func (tg *teg) update() {
 	tg.updated <- nil
 }
 
-func (g *group) updateIO(tg *teg) {
-	// cleanup
-	ignored := make(map[*transition]bool, len(tg.transitions))
-	trs := make([]*transition, 0, 256)
-	for _, t := range tg.transitions {
-		for _, t2 := range g.inputs {
-			if t == t2 {
-				ignored[t] = true
-			}
-		}
-		for _, t2 := range g.outputs {
-			if t == t2 {
-				ignored[t] = true
-			}
-		}
-	}
-	for _, t := range tg.transitions {
-		if !ignored[t] {
-			trs = append(trs, t)
-		}
-	}
-	tg.transitions = trs
+func (g *group) updateIO() {
 	g.inputs = make([]*transition, 0, len(g.model.transitions))
 	g.outputs = make([]*transition, 0, len(g.model.transitions))
 
@@ -706,8 +711,6 @@ func (g *group) updateIO(tg *teg) {
 		it, _ := t.Copy()
 		c := it.(*transition)
 		c.proxy = t
-		c.parent = tg
-		tg.transitions = append(tg.transitions, c)
 		for _, p := range t.in {
 			c.in = append(c.in, p)
 		}
@@ -781,10 +784,6 @@ func (g *group) getFoldedSize() (w, h float64) {
 	outHeight -= GroupIOSpacing
 	w, h = math.Max(math.Max(inWidth, outWidth), GroupMinSize)+GroupMargin*2,
 		math.Max(math.Max(inHeight, outHeight), GroupMinSize)+GroupMargin*2
-	k := math.Ceil(w / GridDefaultGap)
-	w = k * GridDefaultGap
-	k = math.Ceil(h / GridDefaultGap)
-	h = k * GridDefaultGap
 	return
 }
 
@@ -794,6 +793,10 @@ func (g *group) updateBounds() {
 	x, y := x0-GroupMargin, y0-GroupMargin
 	if !g.folded {
 		w, h = (x1-x0)+2*GroupMargin, (y1-y0)+2*GroupMargin
+		k := math.Ceil(w / GridDefaultGap)
+		w = k * GridDefaultGap
+		k = math.Ceil(h / GridDefaultGap)
+		h = k * GridDefaultGap
 	}
 	fw, fh := g.getFoldedSize()
 	if w < fw {
@@ -844,9 +847,6 @@ func (t *teg) foldGroup(g *group) {
 	items := t.Items()
 	delete(items, g)
 	for it := range items {
-		if t, ok := it.(*transition); ok && t.proxy != nil {
-			continue
-		}
 		if (it.Y()+it.Height() >= g.Y()) && (it.Y() <= g.Y()+h1) && (it.X() >= g.X()+w1) {
 			it.Shift(w2-w1, 0)
 		}
@@ -867,9 +867,6 @@ func (t *teg) unfoldGroup(g *group) {
 	items := t.Items()
 	delete(items, g)
 	for it := range items {
-		if t, ok := it.(*transition); ok && t.proxy != nil {
-			continue
-		}
 		if (it.X()+it.Width() >= g.X()) && (it.X() <= g.X()+w2) && (it.Y()+(h2-h1) >= g.Y()+h2) {
 			it.Shift(0, h2-h1)
 		}
@@ -935,26 +932,6 @@ func (tg *teg) removeTransition(t *transition) {
 }
 
 func (tg *teg) removeGroup(g *group) {
-	ignored := make(map[*transition]bool, len(tg.transitions))
-	trs := make([]*transition, 0, 256)
-	for _, t := range tg.transitions {
-		for _, t2 := range g.inputs {
-			if t == t2 {
-				ignored[t] = true
-			}
-		}
-		for _, t2 := range g.outputs {
-			if t == t2 {
-				ignored[t] = true
-			}
-		}
-	}
-	for _, t := range tg.transitions {
-		if !ignored[t] {
-			trs = append(trs, t)
-		}
-	}
-	tg.transitions = trs
 	g.inputs = nil
 	g.outputs = nil
 	for _, t := range g.model.transitions {
@@ -1076,10 +1053,15 @@ func (p *place) IsSelected() bool {
 }
 
 func (t *transition) IsSelected() bool {
+	var selected bool
 	if t.parent != nil {
-		return t.parent.isSelected(t)
+		selected = t.parent.isSelected(t)
 	}
-	return false
+	if !selected {
+		selected = (t.proxy != nil && t.proxy.parent.parent != nil &&
+			t.proxy.parent.parent.parent.isSelected(t))
+	}
+	return selected
 }
 
 func (g *group) IsSelected() bool {
@@ -1147,10 +1129,8 @@ func (t *transition) link(p *place, inbound bool) {
 	} else if !inbound && t.kind == TransitionOutput {
 		return
 	}
-	var tg *teg
 	var g *group
 	if t.proxy != nil {
-		tg = t.parent
 		g = t.proxy.parent.parent
 		t = t.proxy
 	}
@@ -1174,17 +1154,15 @@ func (t *transition) link(p *place, inbound bool) {
 	if changed {
 		t.refineSize()
 		if g != nil {
-			g.updateIO(tg)
+			g.updateIO()
 			g.adjustIO()
 		}
 	}
 }
 
 func (t *transition) unlink(p *place, inbound bool) {
-	var tg *teg
 	var g *group
 	if t.proxy != nil {
-		tg = t.parent
 		g = t.proxy.parent.parent
 		t = t.proxy
 	}
@@ -1218,7 +1196,7 @@ func (t *transition) unlink(p *place, inbound bool) {
 	if changed {
 		t.refineSize()
 		if g != nil {
-			g.updateIO(tg)
+			g.updateIO()
 			g.adjustIO()
 		}
 	}
@@ -1385,26 +1363,38 @@ func (tg *teg) cloneItems(items map[item]bool) (clones map[item]item) {
 }
 
 func (tg *teg) findDrawable(x float64, y float64) (interface{}, bool) {
-	for _, it := range tg.places {
-		if tg.isSelected(it) {
-			if it.in != nil && it.inControl.Has(x, y) {
-				return it.inControl, true
-			} else if it.out != nil && it.outControl.Has(x, y) {
-				return it.outControl, true
+	for _, p := range tg.places {
+		if tg.isSelected(p) {
+			if p.in != nil && p.inControl.Has(x, y) {
+				return p.inControl, true
+			} else if p.out != nil && p.outControl.Has(x, y) {
+				return p.outControl, true
 			}
 		}
-		if it.Has(x, y) {
-			return item(it), true
+	}
+	for _, p := range tg.places {
+		if p.Has(x, y) {
+			return p, true
 		}
 	}
-	for _, it := range tg.transitions {
-		if it.Has(x, y) {
-			return it, true
+	for _, t := range tg.transitions {
+		if t.Has(x, y) {
+			return t, true
 		}
 	}
-	for _, it := range tg.groups {
-		if it.Has(x, y) {
-			return it, true
+	for _, g := range tg.groups {
+		for _, t := range g.inputs {
+			if t.Has(x, y) {
+				return t, true
+			}
+		}
+		for _, t := range g.outputs {
+			if t.Has(x, y) {
+				return t, true
+			}
+		}
+		if g.Has(x, y) {
+			return g, true
 		}
 	}
 	return nil, false
