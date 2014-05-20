@@ -11,7 +11,7 @@ const (
 	TransitionWidth    = 6.0
 	TransitionHeight   = 30.0
 	GroupMargin        = 10.0
-	GroupIOSpacing     = 10.0
+	GroupIOSpacing     = 20.0
 	GroupMinSize       = 150.0
 	ControlPointWidth  = 10.0
 	ControlPointHeight = 10.0

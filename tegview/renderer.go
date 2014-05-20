@@ -36,6 +36,7 @@ const (
 	TipSide       = 3.0
 	PlaceFontSize = 14.0
 	TextFontSize  = 14.0
+	GroupFontSize = 18.0
 	GroupFrameR   = 10.0
 
 	BorderTransitionDist    = 3.0
@@ -186,6 +187,9 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	tr.buf.RRects.Put(frame)
 	for _, t := range g.inputs {
 		tr.renderTransition(t, nested)
+		if len(t.label) > 0 && !nested {
+			tr.renderIOText(t, true)
+		}
 		for i, p := range t.in {
 			tr.renderArc(t, p, true, i)
 			if !nested && tr.ctrl.ModifierKeyAlt {
@@ -200,6 +204,9 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	}
 	for _, t := range g.outputs {
 		tr.renderTransition(t, nested)
+		if len(t.label) > 0 && !nested {
+			tr.renderIOText(t, false)
+		}
 		if !g.folded {
 			for i, p := range t.in {
 				tr.renderArc(t, p, true, i)
@@ -214,6 +221,79 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	}
 	if !g.folded {
 		tr.renderModel(g.model, true)
+
+		// Render label
+		if len(g.label) < 1 || nested {
+			return
+		}
+		room := g.Width() - GroupMargin*2
+		breaklen := int(math.Max(room/TextFontSize, 16))
+		cfg := textConfig{
+			x: g.X() + GroupMargin, y: g.Y() + g.Height() + TextFontSize,
+			room: room, color: ColorComments, align: render.TextAlignCenter,
+			text: fmt.Sprintf("// %s", g.label), breaklen: breaklen, oblique: true,
+		}
+		tr.renderText(&cfg)
+		return
+	}
+
+	// Render big label
+	if len(g.label) < 1 {
+		return
+	}
+	room := g.Width() - GroupMargin*2
+	breaklen := int(math.Max(room/GroupFontSize, 16))
+	text := g.label
+	_, theight := calcTextFragments(text, GroupFontSize, breaklen)
+	vmargin := calcCenteringMargin(g.Height(), theight, 1)
+
+	cfg := textConfig{
+		x: g.X() + GroupMargin, y: g.Y() + GroupMargin + vmargin,
+		room: room, color: ColorGroupFrame, align: render.TextAlignCenter,
+		text: text, breaklen: breaklen, fontsize: GroupFontSize,
+	}
+	if g.IsSelected() {
+		cfg.color = ColorSelected
+	}
+	tr.renderText(&cfg)
+}
+
+func (tr *tegRenderer) renderIOText(t *transition, input bool) {
+	cfg := textConfig{
+		breaklen: 16, color: ColorComments, oblique: true,
+	}
+	_, theight := calcTextFragments("// "+t.label, TextFontSize, 16)
+	if t.horizontal {
+		if input {
+			cfg.x = t.X() + 3*Padding + theight
+			cfg.y = t.Y() - 3*Padding
+			cfg.align = render.TextAlignRight
+			cfg.text = t.label + " //"
+		} else {
+			cfg.x = t.X() - t.Width() + 3*Padding
+			cfg.y = t.Y() + TextFontSize
+			cfg.align = render.TextAlignLeft
+			cfg.text = "// " + t.label
+		}
+		cfg.vertical = true
+		cfg.room = GroupIOSpacing
+		cfg.valign = true
+		tr.renderText(&cfg)
+	} else {
+		if input {
+			cfg.x = t.X() - 3*Padding
+			cfg.y = t.Y() + t.Height()
+			cfg.align = render.TextAlignRight
+			cfg.text = "// " + t.label
+		} else {
+			cfg.x = t.X() + t.Width() + 3*Padding
+			cfg.y = t.Y() - theight
+			cfg.align = render.TextAlignLeft
+			cfg.text = t.label + " //"
+		}
+		cfg.room = GroupIOSpacing
+		cfg.valign = true
+		tr.renderText(&cfg)
 	}
 }
 
@@ -292,7 +372,7 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 			x: x, y: y + p.Height() + TextFontSize,
 			room: p.Width(), color: ColorComments,
 			text:     fmt.Sprintf("// %s", p.label),
-			breaklen: 16,
+			breaklen: 16, oblique: true, align: render.TextAlignCenter,
 		}
 		tr.renderText(&cfg)
 	}
@@ -384,7 +464,8 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 	if len(t.label) > 0 && !nested && t.proxy == nil {
 		cfg := textConfig{
 			text:     fmt.Sprintf("// %s", t.label),
-			breaklen: 16, color: ColorComments,
+			breaklen: 16, color: ColorComments, oblique: true,
+			align: render.TextAlignCenter,
 		}
 		if t.horizontal {
 			cfg.x = x + t.Width() + TextFontSize/2
@@ -523,47 +604,77 @@ func (tr *tegRenderer) renderConnection(t *transition, p *place, inbound bool, i
 	tr.buf.Chains.Put(chain)
 }
 
-type textConfig struct {
-	x, y, room float64
-	valign     bool
-	vertical   bool
-	color      string
-	text       string
-	breaklen   int
-}
-
-func (tr *tegRenderer) renderText(cfg *textConfig) {
+func calcTextFragments(text string, fontsize float64, breaklen int) ([]string, float64) {
+	array := make([]string, 0, 32)
 	// detect all substrings with  1 <= length <= N
-	rx := regexp.MustCompile(fmt.Sprintf(".{1,%d}", cfg.breaklen))
-	chunks := rx.FindAllString(cfg.text, -1)
+	rx := regexp.MustCompile(fmt.Sprintf(".{1,%d}", breaklen))
+	chunks := rx.FindAllString(text, -1)
 
 	var offset float64
 	for i := range chunks {
 		subchunks := strings.Split(chunks[i], "\n")
 		for _, str := range subchunks {
-			label := &render.Text{
-				Style: &render.Style{
-					LineWidth: tr.scale(1.0),
-					Fill:      true,
-					FillStyle: cfg.color,
-				},
-				Font:     TextFontNormal,
-				FontSize: tr.scale(TextFontSize),
-				Oblique:  true,
-				Label:    str,
-				Vertical: cfg.vertical,
+			array = append(array, str)
+			offset += fontsize + Padding
+		}
+	}
+	return array, offset
+}
+
+type textConfig struct {
+	fontsize   float64
+	x, y, room float64
+	oblique    bool
+	valign     bool
+	vertical   bool
+	color      string
+	text       string
+	align      string
+	breaklen   int
+}
+
+func (tr *tegRenderer) renderText(cfg *textConfig) {
+	if cfg.fontsize < 8 {
+		cfg.fontsize = TextFontSize
+	}
+	if cfg.breaklen < 1 {
+		cfg.breaklen = 16
+	}
+	strings, _ := calcTextFragments(cfg.text, cfg.fontsize, cfg.breaklen)
+	var offset float64
+	for _, str := range strings {
+		label := &render.Text{
+			Style: &render.Style{
+				LineWidth: tr.scale(1.0),
+				Fill:      true,
+				FillStyle: cfg.color,
+			},
+			Font:     TextFontNormal,
+			FontSize: tr.scale(cfg.fontsize),
+			Oblique:  cfg.oblique,
+			Label:    str,
+			Align:    cfg.align,
+			Vertical: cfg.vertical,
+		}
+		if cfg.vertical {
+			if cfg.valign {
+				label.X = tr.absX(tr.scale(cfg.x + cfg.room/2 - offset))
+				label.Y = tr.absY(tr.scale(cfg.y))
+			} else {
+				label.X = tr.absX(tr.scale(cfg.x - offset - 2*Padding))
+				label.Y = tr.absY(tr.scale(cfg.y + cfg.room/2))
 			}
+		} else {
 			if cfg.valign {
 				label.X = tr.absX(tr.scale(cfg.x))
 				label.Y = tr.absY(tr.scale(cfg.y + cfg.room/2 + offset))
 			} else {
-				label.Align = render.TextAlignCenter
 				label.X = tr.absX(tr.scale(cfg.x + cfg.room/2))
 				label.Y = tr.absY(tr.scale(cfg.y + offset + 2*Padding))
 			}
-			tr.buf.Texts.Put(label)
-			offset += TextFontSize + Padding
 		}
+		tr.buf.Texts.Put(label)
+		offset += cfg.fontsize + Padding
 	}
 }
 
