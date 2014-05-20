@@ -23,6 +23,10 @@ ApplicationWindow {
                 text: "-"
                 onClicked: cv.zoom -= 0.2
             }
+            ToolButton {
+                text: "json"
+                onClicked: ctrl.json()
+            }
             Rectangle {
                 width: 3
                 anchors.top: parent.top

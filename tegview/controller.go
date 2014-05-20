@@ -1,6 +1,7 @@
 package tegview
 
 import (
+	"encoding/json"
 	"log"
 	"math"
 	"unicode"
@@ -100,6 +101,11 @@ func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 	x1 = (xGlobal - c.CanvasWidth/2 - c.CanvasWindowWidth/2) / c.Zoom
 	y1 = (yGlobal - c.CanvasHeight/2 - c.CanvasWindowHeight/2) / c.Zoom
 	return
+}
+
+func (c *Ctrl) Json() {
+	data, err := json.Marshal(c.model)
+	log.Println(string(data), err)
 }
 
 func (c *Ctrl) Flush() {
