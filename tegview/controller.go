@@ -326,15 +326,14 @@ func (c *Ctrl) handleEvents() {
 							// stroking the void, cut the links
 							start := c.model.util.min
 							end := c.model.util.max
-							var toUnlink []*place
-							unlink := func(t *transition, p *place, inbound bool, i int) {
+							unlink := func(t *transition, p *place, inbound bool, i int) bool {
 								if inbound {
 									control := p.outControl.Center()
 									borderP := p.BorderPoint(control.X, control.Y, BorderPlaceDist)
 									borderT := t.BorderPoint(true, i)
 									if geometry.CheckSegmentsCrossing(start, end, borderP, control) ||
 										geometry.CheckSegmentsCrossing(start, end, control, borderT) {
-										toUnlink = append(toUnlink, p)
+										return true
 									}
 								} else {
 									control := p.inControl.Center()
@@ -342,48 +341,63 @@ func (c *Ctrl) handleEvents() {
 									borderT := t.BorderPoint(false, i)
 									if geometry.CheckSegmentsCrossing(start, end, borderP, control) ||
 										geometry.CheckSegmentsCrossing(start, end, control, borderT) {
-										toUnlink = append(toUnlink, p)
+										return true
 									}
 								}
+								return false
 							}
+							var toUnlink map[*place]bool
 							for _, t := range c.model.transitions {
-								toUnlink = make([]*place, 0, len(t.in))
+								toUnlink = make(map[*place]bool, len(t.in))
 								for i, p := range t.in {
-									unlink(t, p, true, i)
+									if unlink(t, p, true, i) {
+										toUnlink[p] = true
+									}
 								}
-								for _, p := range toUnlink {
-									t.unlink(p, true)
+								for p := range toUnlink {
+									t.unlink(p, true, false)
 								}
-								toUnlink = make([]*place, 0, len(t.out))
+								toUnlink = make(map[*place]bool, len(t.out))
 								for i, p := range t.out {
-									unlink(t, p, false, i)
+									if unlink(t, p, false, i) {
+										toUnlink[p] = true
+									}
 								}
-								for _, p := range toUnlink {
-									t.unlink(p, false)
+								for p := range toUnlink {
+									t.unlink(p, false, false)
 								}
 							}
+							grps := make(map[*group]bool, len(c.model.groups))
 							for _, g := range c.model.groups {
 								for _, t := range g.inputs {
-									toUnlink = make([]*place, 0, len(t.in))
+									toUnlink = make(map[*place]bool, len(t.in))
 									for i, p := range t.in {
-										unlink(t, p, true, i)
+										if unlink(t, p, true, i) {
+											toUnlink[p] = true
+										}
 									}
-									for _, p := range toUnlink {
-										t.unlink(p, true)
+									for p := range toUnlink {
+										grps[g] = true
+										t.unlink(p, true, true)
 									}
-
 								}
 								for _, t := range g.outputs {
-									toUnlink = make([]*place, 0, len(t.out))
+									toUnlink = make(map[*place]bool, len(t.out))
 									for i, p := range t.out {
-										unlink(t, p, false, i)
+										if unlink(t, p, false, i) {
+											toUnlink[p] = true
+										}
 									}
-									for _, p := range toUnlink {
-										t.unlink(p, false)
+									for p := range toUnlink {
+										grps[g] = true
+										t.unlink(p, false, true)
 									}
 								}
 							}
-
+							for g := range grps {
+								g.updateIO()
+								g.adjustIO()
+							}
 						}
 					} else {
 						c.alignItems(c.model.selected)
@@ -498,6 +512,7 @@ func (c *Ctrl) groupItems(items map[item]bool) {
 		}
 	}
 	g := c.model.addGroup(data)
+	g.updateBounds(true)
 	g.updateIO()
 	g.adjustIO()
 	g.Align()

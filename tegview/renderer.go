@@ -125,39 +125,59 @@ func (tr *tegRenderer) process(model *teg) {
 	for {
 		<-tr.task
 		tr.fixViewport()
-		tr.renderModel(model, false)
+		tr.renderModel(model, nil, false)
 		tr.Screen = tr.buf
 		tr.buf = newTegBuffer()
 		tr.ready <- nil
 	}
 }
 
-func (tr *tegRenderer) renderModel(tg *teg, nested bool) {
+func (tr *tegRenderer) renderModel(tg *teg, shift *geometry.Point, nested bool) {
+	var dx, dy float64
+	if nested {
+		dx, dy = shift.X, shift.Y
+	}
 	for _, g := range tg.groups {
+		g.Shift(dx, dy)
 		tr.renderGroup(g, nested)
+		g.Shift(-dx, -dy)
 	}
 	for _, p := range tg.places {
+		p.Shift(dx, dy)
 		tr.renderPlace(p, nested)
+		p.Shift(-dx, -dy)
 	}
 	for _, t := range tg.transitions {
 		if !nested || t.kind == TransitionInternal {
+			t.Shift(dx, dy)
 			tr.renderTransition(t, nested)
 			for i, p := range t.in {
+				p.Shift(dx, dy)
 				tr.renderArc(t, p, true, i)
+				p.Shift(-dx, -dy)
 			}
 			for i, p := range t.out {
+				p.Shift(dx, dy)
 				tr.renderArc(t, p, false, i)
+				p.Shift(-dx, -dy)
 			}
+			t.Shift(-dx, -dy)
 		}
 	}
 	if !nested && tr.ctrl.ModifierKeyAlt {
 		for _, t := range tg.transitions {
+			t.Shift(dx, dy)
 			for i, p := range t.in {
+				p.Shift(dx, dy)
 				tr.renderConnection(t, p, true, i)
+				p.Shift(-dx, -dy)
 			}
 			for i, p := range t.out {
+				p.Shift(dx, dy)
 				tr.renderConnection(t, p, false, i)
+				p.Shift(-dx, -dy)
 			}
+			t.Shift(-dx, -dy)
 		}
 	}
 	if !nested && tg.util.kind != UtilNone {
@@ -185,6 +205,12 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		frame.Style.FillStyle = ColorGroupBgSelected
 	}
 	tr.buf.RRects.Put(frame)
+
+	// Internals rendering code
+	x0, y0, x1, y1 := detectBounds(g.model.Items())
+	itemsCenter := pt(x0+(x1-x0)/2, y0+(y1-y0)/2)
+	dx, dy := g.Center().X-itemsCenter.X, g.Center().Y-itemsCenter.Y
+
 	for _, t := range g.inputs {
 		tr.renderTransition(t, nested)
 		if len(t.label) > 0 && !nested {
@@ -198,7 +224,9 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		}
 		if !g.folded {
 			for i, p := range t.out {
+				p.Shift(dx, dy)
 				tr.renderArc(t, p, false, i)
+				p.Shift(-dx, -dy)
 			}
 		}
 	}
@@ -209,7 +237,9 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		}
 		if !g.folded {
 			for i, p := range t.in {
+				p.Shift(dx, dy)
 				tr.renderArc(t, p, true, i)
+				p.Shift(-dx, -dy)
 			}
 		}
 		for i, p := range t.out {
@@ -220,7 +250,7 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		}
 	}
 	if !g.folded {
-		tr.renderModel(g.model, true)
+		tr.renderModel(g.model, pt(dx, dy), true)
 
 		// Render label
 		if len(g.label) < 1 || nested {
