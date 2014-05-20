@@ -139,7 +139,7 @@ func (tr *tegRenderer) renderModel(tg *teg, shift *geometry.Point, nested bool) 
 	}
 	for _, g := range tg.groups {
 		g.Shift(dx, dy)
-		tr.renderGroup(g, nested)
+		tr.renderGroup(g, shift, nested)
 		g.Shift(-dx, -dy)
 	}
 	for _, p := range tg.places {
@@ -185,7 +185,11 @@ func (tr *tegRenderer) renderModel(tg *teg, shift *geometry.Point, nested bool) 
 	}
 }
 
-func (tr *tegRenderer) renderGroup(g *group, nested bool) {
+func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool) {
+	var dxRoot, dyRoot float64
+	if nested {
+		dxRoot, dyRoot = shift.X, shift.Y
+	}
 	frame := &render.RoundedRect{
 		Style: &render.Style{
 			LineWidth:   tr.scale(2.0),
@@ -207,9 +211,7 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 	tr.buf.RRects.Put(frame)
 
 	// Internals rendering code
-	x0, y0, x1, y1 := detectBounds(g.model.Items())
-	itemsCenter := pt(x0+(x1-x0)/2, y0+(y1-y0)/2)
-	dx, dy := g.Center().X-itemsCenter.X, g.Center().Y-itemsCenter.Y
+	dx, dy := calcItemsShift(g.Center(), g.model.Items())
 
 	for _, t := range g.inputs {
 		tr.renderTransition(t, nested)
@@ -217,7 +219,13 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 			tr.renderIOText(t, true)
 		}
 		for i, p := range t.in {
-			tr.renderArc(t, p, true, i)
+			if nested {
+				p.Shift(dxRoot, dyRoot)
+				tr.renderArc(t, p, true, i)
+				p.Shift(-dxRoot, -dyRoot)
+			} else {
+				tr.renderArc(t, p, true, i)
+			}
 			if !nested && tr.ctrl.ModifierKeyAlt {
 				tr.renderConnection(t, p, true, i)
 			}
@@ -225,7 +233,10 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		if !g.folded {
 			for i, p := range t.out {
 				p.Shift(dx, dy)
+				ctrl := p.inControl
+				p.inControl = t.newControlPoint(p.Center(), true)
 				tr.renderArc(t, p, false, i)
+				p.inControl = ctrl
 				p.Shift(-dx, -dy)
 			}
 		}
@@ -238,12 +249,21 @@ func (tr *tegRenderer) renderGroup(g *group, nested bool) {
 		if !g.folded {
 			for i, p := range t.in {
 				p.Shift(dx, dy)
+				ctrl := p.outControl
+				p.outControl = t.newControlPoint(p.Center(), false)
 				tr.renderArc(t, p, true, i)
+				p.outControl = ctrl
 				p.Shift(-dx, -dy)
 			}
 		}
 		for i, p := range t.out {
-			tr.renderArc(t, p, false, i)
+			if nested {
+				p.Shift(dxRoot, dyRoot)
+				tr.renderArc(t, p, false, i)
+				p.Shift(-dxRoot, -dyRoot)
+			} else {
+				tr.renderArc(t, p, false, i)
+			}
 			if !nested && tr.ctrl.ModifierKeyAlt {
 				tr.renderConnection(t, p, false, i)
 			}

@@ -194,7 +194,6 @@ ApplicationWindow {
             } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
                 editbtn.checked = true
             } else {
-                //console.log(event.key, event.text)
                 ctrl.keyPressed(event.key, event.text)
             }
 

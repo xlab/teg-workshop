@@ -416,10 +416,9 @@ func (c *Ctrl) handleEvents() {
 						c.model.deselectAll()
 						c.model.selectItem(focused.(item))
 						if t, ok := focused.(*transition); ok {
-							t.Rotate()
+							t.rotate()
 							if t.proxy != nil {
-								g := t.proxy.parent.parent
-								g.adjustIO()
+								t.group.adjustIO()
 							}
 							c.model.update()
 						}
