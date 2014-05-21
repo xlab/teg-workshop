@@ -1,10 +1,12 @@
 package tegview
 
 import (
+	"encoding/json"
 	"math"
 	"sort"
 
 	"github.com/xlab/teg-workshop/geometry"
+	"github.com/xlab/teg-workshop/util"
 )
 
 const (
@@ -50,6 +52,7 @@ type drawable interface {
 }
 
 type item interface {
+	Id() string
 	X() float64
 	Y() float64
 	Center() *geometry.Point
@@ -73,6 +76,7 @@ type controlPoint struct {
 
 type place struct {
 	*geometry.Circle
+	id         string
 	counter    int
 	timer      int
 	label      string
@@ -85,6 +89,7 @@ type place struct {
 
 type transition struct {
 	*geometry.Rect
+	id         string
 	in         []*place
 	out        []*place
 	proxy      *transition
@@ -97,12 +102,13 @@ type transition struct {
 
 type group struct {
 	*geometry.Rect
-	model   *teg
+	id      string
 	iostate map[*transition]*transition
 	inputs  []*transition
 	outputs []*transition
 	label   string
 	folded  bool
+	model   *teg
 	parent  *teg
 }
 
@@ -114,6 +120,7 @@ type utility struct {
 func newPlace(x, y float64) *place {
 	return &place{
 		Circle: geometry.NewCircle(x, y, PlaceRadius),
+		id:     util.GenUUID(),
 	}
 }
 
@@ -121,6 +128,7 @@ func newTransition(x, y float64) *transition {
 	return &transition{
 		Rect: geometry.NewRect(x-TransitionWidth/2, y-TransitionHeight/2,
 			TransitionWidth, TransitionHeight),
+		id: util.GenUUID(),
 	}
 }
 
@@ -129,6 +137,7 @@ func newGroup() *group {
 		model:   newTeg(),
 		inputs:  make([]*transition, 0, 8),
 		outputs: make([]*transition, 0, 8),
+		id:      util.GenUUID(),
 	}
 }
 
@@ -140,6 +149,313 @@ func newControlPoint(x float64, y float64, modified bool) *controlPoint {
 			ControlPointWidth, ControlPointHeight),
 		modified,
 	}
+}
+
+type ControlPoint struct {
+	X, Y     float64
+	Modified bool
+}
+
+type Place struct {
+	Id         string
+	X, Y       float64
+	Counter    int
+	Timer      int
+	Label      string
+	InControl  *ControlPoint
+	OutControl *ControlPoint
+}
+
+type Transition struct {
+	Id         string
+	X, Y       float64
+	In, Out    []*Place
+	ProxyId    string
+	Label      string
+	Horizontal bool
+	Kind       int
+}
+
+type Group struct {
+	Id      string
+	X, Y    float64
+	Inputs  []*Transition
+	Outputs []*Transition
+	Iostate map[string]string
+	Label   string
+	Folded  bool
+	Model   *Teg
+}
+
+type Teg struct {
+	Id          string
+	Places      []*Place
+	Transitions []*Transition
+	Groups      []*Group
+}
+
+func (cp *controlPoint) Model() *ControlPoint {
+	return &ControlPoint{cp.X(), cp.Y(), cp.modified}
+}
+
+func (p *place) Model() *Place {
+	model := &Place{
+		Id: p.id,
+		X:  p.X(), Y: p.Y(),
+
+		Counter: p.counter,
+		Timer:   p.timer,
+		Label:   p.label,
+	}
+	if p.in != nil {
+		model.InControl = p.inControl.Model()
+	}
+	if p.out != nil {
+		model.OutControl = p.outControl.Model()
+	}
+	return model
+}
+
+func (t *transition) Model() *Transition {
+	model := &Transition{
+		Id: t.id,
+		X:  t.X(), Y: t.Y(),
+
+		Label:      t.label,
+		Kind:       t.kind,
+		Horizontal: t.horizontal,
+
+		In:  make([]*Place, len(t.in)),
+		Out: make([]*Place, len(t.out)),
+	}
+	if t.proxy != nil {
+		model.ProxyId = t.proxy.id
+	}
+	for i, p := range t.in {
+		model.In[i] = p.Model()
+	}
+	for i, p := range t.out {
+		model.Out[i] = p.Model()
+	}
+	return model
+}
+
+func (g *group) Model() *Group {
+	model := &Group{
+		Id: g.id,
+		X:  g.X(), Y: g.Y(),
+
+		Label:  g.label,
+		Folded: g.folded,
+		Model:  g.model.Model(),
+
+		Inputs:  make([]*Transition, len(g.inputs)),
+		Outputs: make([]*Transition, len(g.outputs)),
+		Iostate: make(map[string]string, len(g.inputs)+len(g.outputs)),
+	}
+	for i, t := range g.inputs {
+		model.Inputs[i] = t.Model()
+	}
+	for i, t := range g.outputs {
+		model.Outputs[i] = t.Model()
+	}
+	for proxy, io := range g.iostate {
+		model.Iostate[io.id] = proxy.id
+	}
+	return model
+}
+
+func (tg *teg) Model() *Teg {
+	model := &Teg{
+		Id: tg.id,
+
+		Places:      make([]*Place, 0, len(tg.places)),
+		Transitions: make([]*Transition, len(tg.transitions)),
+		Groups:      make([]*Group, len(tg.groups)),
+	}
+	ignore := make(map[*place]bool, len(tg.places))
+	for i, t := range tg.transitions {
+		model.Transitions[i] = t.Model()
+		for _, p := range t.in {
+			ignore[p] = true
+		}
+		for _, p := range t.out {
+			ignore[p] = true
+		}
+	}
+	for _, p := range tg.places {
+		if !ignore[p] {
+			model.Places = append(model.Places, p.Model())
+		}
+	}
+	for i, g := range tg.groups {
+		model.Groups[i] = g.Model()
+	}
+	return model
+}
+
+func (cp *controlPoint) MarshalJSON() ([]byte, error) {
+	return json.Marshal(cp.Model())
+}
+func (p *place) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.Model())
+}
+func (t *transition) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.Model())
+}
+func (g *group) MarshalJSON() ([]byte, error) {
+	return json.Marshal(g.Model())
+}
+func (tg *teg) MarshalJSON() ([]byte, error) {
+	return json.Marshal(tg.Model())
+}
+
+func constructTransition(model *Transition) *transition {
+	t := &transition{
+		Rect:       geometry.NewRect(model.X, model.Y, TransitionWidth, TransitionHeight),
+		id:         model.Id,
+		horizontal: model.Horizontal,
+		label:      model.Label,
+		kind:       model.Kind,
+	}
+	if t.horizontal {
+		t.Rotate(t.horizontal)
+	}
+	return t
+}
+
+func constructPlace(model *Place) *place {
+	p := &place{
+		Circle:  geometry.NewCircle(model.X, model.Y, PlaceRadius),
+		id:      model.Id,
+		timer:   model.Timer,
+		counter: model.Counter,
+		label:   model.Label,
+	}
+	in := model.InControl
+	if in != nil {
+		p.inControl = newControlPoint(in.X, in.Y, in.Modified)
+	}
+	out := model.OutControl
+	if out != nil {
+		p.outControl = newControlPoint(out.X, out.Y, out.Modified)
+	}
+	return p
+}
+
+func (tg *teg) findById(id string) item {
+	for it := range tg.Items() {
+		if it.Id() == id {
+			return it
+		}
+	}
+	return nil
+}
+
+func (tg *teg) Construct(model *Teg) {
+	tg.id = model.Id
+	for _, g := range model.Groups {
+		gNew := newGroup()
+		gNew.id = g.Id
+		gNew.label = g.Label
+		gNew.folded = g.Folded
+		gNew.parent = tg
+		gNew.model.parent = tg
+		gNew.model.Construct(g.Model)
+		gNew.Rect = geometry.NewRect(g.X, g.Y, 0, 0)
+		for _, t := range g.Inputs {
+			tNew := constructTransition(t)
+			pId := g.Iostate[t.Id]
+			tNew.group = gNew
+			tNew.proxy = gNew.model.findById(pId).(*transition)
+			tNew.parent = tg
+			for _, p := range t.In {
+				var pNew *place
+				if pNew, ok := tg.findById(p.Id).(*place); !ok {
+					pNew = constructPlace(p)
+					pNew.parent = tg
+					tg.places = append(tg.places, pNew)
+				}
+				pNew.out = tNew
+				tNew.in = append(tNew.in, pNew)
+			}
+			for _, p := range t.Out {
+				pInner := gNew.model.findById(p.Id).(*place)
+				tNew.out = append(tNew.out, pInner)
+			}
+			tNew.refineSize()
+			gNew.inputs = append(gNew.inputs, tNew)
+		}
+		for _, t := range g.Outputs {
+			tNew := constructTransition(t)
+			pId := g.Iostate[t.Id]
+			tNew.group = gNew
+			tNew.proxy = gNew.model.findById(pId).(*transition)
+			tNew.parent = tg
+			for _, p := range t.Out {
+				var pNew *place
+				if pNew, ok := tg.findById(p.Id).(*place); !ok {
+					pNew = constructPlace(p)
+					pNew.parent = tg
+					tg.places = append(tg.places, pNew)
+				}
+				pNew.in = tNew
+				tNew.out = append(tNew.out, pNew)
+			}
+			for _, p := range t.In {
+				pInner := gNew.model.findById(p.Id).(*place)
+				tNew.in = append(tNew.in, pInner)
+			}
+			tNew.refineSize()
+			gNew.outputs = append(gNew.outputs, tNew)
+		}
+		gNew.updateIO()
+		gNew.adjustIO()
+		tg.groups = append(tg.groups, gNew)
+	}
+	for _, t := range model.Transitions {
+		tNew := constructTransition(t)
+		tNew.parent = tg
+		made := make(map[string]*place, len(t.In)+len(t.Out))
+		for _, p := range t.In {
+			var pNew *place
+			if pNew, ok := made[p.Id]; !ok {
+				pNew = constructPlace(p)
+				pNew.parent = tg
+				made[p.Id] = pNew
+				tg.places = append(tg.places, pNew)
+			}
+			pNew.out = tNew
+			tNew.in = append(tNew.in, pNew)
+		}
+		for _, p := range t.Out {
+			var pNew *place
+			if pNew, ok := made[p.Id]; !ok {
+				pNew = constructPlace(p)
+				pNew.parent = tg
+				made[p.Id] = pNew
+				tg.places = append(tg.places, pNew)
+			}
+			pNew.in = tNew
+			tNew.out = append(tNew.out, pNew)
+		}
+		tNew.refineSize()
+		tg.transitions = append(tg.transitions, tNew)
+	}
+	for _, p := range model.Places {
+		pNew := constructPlace(p)
+		pNew.parent = tg
+		tg.places = append(tg.places, pNew)
+	}
+}
+
+func (tg *teg) UnmarshalJSON(data []byte) error {
+	m := &Teg{}
+	if err := json.Unmarshal(data, m); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type places []*place
@@ -579,27 +895,6 @@ func (p *place) resetProperties() {
 	}
 }
 
-func (t *transition) findProxy(inbound bool) *transition {
-	g := t.parent.parent
-	if g == nil {
-		return nil
-	}
-	if inbound {
-		for _, tt := range g.inputs {
-			if tt.proxy == t {
-				return tt
-			}
-		}
-	} else {
-		for _, tt := range g.outputs {
-			if tt.proxy == t {
-				return tt
-			}
-		}
-	}
-	return nil
-}
-
 func (t *transition) newControlPoint(center *geometry.Point, inbound bool) *controlPoint {
 	circle := geometry.NewCircle(center.X, center.Y, PlaceRadius)
 	if inbound {
@@ -623,6 +918,18 @@ func (p *place) resetControlPoint(inbound bool) {
 		point := p.BorderPoint(centerT.X, centerT.Y, 15.0)
 		p.outControl = newControlPoint(point.X, point.Y, false)
 	}
+}
+
+func (p *place) Id() string {
+	return p.id
+}
+
+func (t *transition) Id() string {
+	return t.id
+}
+
+func (g *group) Id() string {
+	return g.id
 }
 
 func (p *place) Label() string {
@@ -655,10 +962,9 @@ type teg struct {
 	places      []*place
 	transitions []*transition
 	groups      []*group
-	inputs      []*transition
-	outputs     []*transition
 	selected    map[item]bool
 	updated     chan interface{}
+	id          string
 }
 
 func detectBounds(items map[item]bool) (x0, y0, x1, y1 float64) {
@@ -1011,28 +1317,11 @@ func (tg *teg) unfoldGroup(g *group) {
 
 func (tg *teg) removePlace(p *place) {
 	if p.in != nil {
-		g := p.in.parent.parent
-		if g != nil {
-			for _, t := range g.outputs {
-				if t.proxy == p.in {
-					t.unlink(p, false, false)
-				}
-			}
-		} else {
-			p.in.unlink(p, false, false)
-		}
+		p.in.unlink(p, false, false)
+
 	}
 	if p.out != nil {
-		g := p.out.parent.parent
-		if g != nil {
-			for _, t := range g.inputs {
-				if t.proxy == p.out {
-					t.unlink(p, true, false)
-				}
-			}
-		} else {
-			p.out.unlink(p, true, false)
-		}
+		p.out.unlink(p, true, false)
 	}
 	for i, place := range tg.places {
 		if place == p {
@@ -1518,8 +1807,7 @@ func newTeg() *teg {
 		transitions: make([]*transition, 0, 256),
 		groups:      make([]*group, 0, 32),
 		selected:    make(map[item]bool, 256),
-		inputs:      make([]*transition, 0, 8),
-		outputs:     make([]*transition, 0, 8),
 		updated:     make(chan interface{}, 100),
+		id:          util.GenUUID(),
 	}
 }

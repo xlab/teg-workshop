@@ -60,7 +60,7 @@ type Ctrl struct {
 	CanvasWindowY      float64
 	CanvasWindowHeight float64
 	CanvasWindowWidth  float64
-	Zoom               float64
+	Zoom, ZoomX, ZoomY float64
 
 	ModifierKeyControl bool
 	ModifierKeyShift   bool
@@ -98,14 +98,36 @@ func (c *Ctrl) MouseMoved(x, y float64) {
 func (c *Ctrl) WindowCoordsToRelativeGlobal(x, y float64) (x1, y1 float64) {
 	xGlobal := c.CanvasWindowX + x
 	yGlobal := c.CanvasWindowY + y
-	x1 = (xGlobal - c.CanvasWidth/2 - c.CanvasWindowWidth/2) / c.Zoom
-	y1 = (yGlobal - c.CanvasHeight/2 - c.CanvasWindowHeight/2) / c.Zoom
+	x1 = c.unscaleX(xGlobal - c.CanvasWidth/2 - c.CanvasWindowWidth/2)
+	y1 = c.unscaleY(yGlobal - c.CanvasHeight/2 - c.CanvasWindowHeight/2)
 	return
+}
+
+func (c *Ctrl) unscaleX(x float64) float64 {
+	regX := c.CanvasWindowX - c.CanvasWidth/2
+	x = regX - x
+	x = x / c.Zoom
+	x = regX - x
+	return x
+}
+
+func (c *Ctrl) unscaleY(y float64) float64 {
+	regY := c.CanvasWindowY - c.CanvasHeight/2
+	y = regY - y
+	y = y / c.Zoom
+	y = regY - y
+	return y
 }
 
 func (c *Ctrl) Json() {
 	data, err := json.Marshal(c.model)
-	log.Println(string(data), err)
+	if err != nil {
+		log.Println(err)
+	}
+	teg := newTeg()
+	if err := json.Unmarshal(data, teg); err != nil {
+		log.Println(err)
+	}
 }
 
 func (c *Ctrl) Flush() {

@@ -115,6 +115,7 @@ func newTegRenderer(ctrl *Ctrl) *tegRenderer {
 
 func (tr *tegRenderer) fixViewport() {
 	tr.zoom = tr.ctrl.Zoom
+
 	tr.canvasWidth = tr.ctrl.CanvasWidth
 	tr.canvasHeight = tr.ctrl.CanvasHeight
 	tr.viewboxWidth = tr.ctrl.CanvasWindowWidth
@@ -198,8 +199,8 @@ func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool)
 			Fill:        true,
 			FillStyle:   ColorGroupBg,
 		},
-		X: tr.absX(tr.scale(g.X())),
-		Y: tr.absY(tr.scale(g.Y())),
+		X: tr.absX(tr.scaleX(g.X())),
+		Y: tr.absY(tr.scaleY(g.Y())),
 		W: tr.scale(g.Width()),
 		H: tr.scale(g.Height()),
 		R: tr.scale(GroupFrameR),
@@ -362,8 +363,8 @@ func (tr *tegRenderer) renderUtility(u *utility) {
 				StrokeStyle: ColorUtility,
 				FillStyle:   ColorUtilityShadow,
 			},
-			X: tr.absX(tr.scale(min.X)),
-			Y: tr.absY(tr.scale(min.Y)),
+			X: tr.absX(tr.scaleX(min.X)),
+			Y: tr.absY(tr.scaleY(min.Y)),
 			W: tr.scale(w), H: tr.scale(h),
 		}
 		tr.buf.Rects.Put(rect)
@@ -389,8 +390,8 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 			Stroke:      true,
 			StrokeStyle: ColorDefault,
 		},
-		X: tr.absX(tr.scale(x)),
-		Y: tr.absY(tr.scale(y)),
+		X: tr.absX(tr.scaleX(x)),
+		Y: tr.absY(tr.scaleY(y)),
 		D: tr.scale(p.Width()),
 	}
 	if p.IsSelected() {
@@ -401,8 +402,8 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 					Fill:      true,
 					FillStyle: ColorControlPoint,
 				},
-				X: tr.absX(tr.scale(xc)),
-				Y: tr.absY(tr.scale(yc)),
+				X: tr.absX(tr.scaleX(xc)),
+				Y: tr.absY(tr.scaleY(yc)),
 				W: tr.scale(cp.Width()),
 				H: tr.scale(cp.Height()),
 			}
@@ -435,8 +436,8 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 			Fill:      true,
 			FillStyle: ColorDefault,
 		},
-		X: tr.absX(tr.scale(x)),
-		Y: tr.absY(tr.scale(y)),
+		X: tr.absX(tr.scaleX(x)),
+		Y: tr.absY(tr.scaleY(y)),
 		W: tr.scale(t.Width()),
 		H: tr.scale(t.Height()),
 	}
@@ -452,13 +453,13 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 		}
 		if t.horizontal {
 			kw, kh = kh, kw
-			knob.X = tr.scale(t.Center().X - kw/2)
-			knob.Y = tr.scale(t.Center().Y - kh)
+			knob.X = tr.scaleX(t.Center().X - kw/2)
+			knob.Y = tr.scaleY(t.Center().Y - kh)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		} else {
-			knob.X = tr.scale(t.Center().X - kw)
-			knob.Y = tr.scale(t.Center().Y - kh/2)
+			knob.X = tr.scaleX(t.Center().X - kw)
+			knob.Y = tr.scaleY(t.Center().Y - kh/2)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		}
@@ -473,13 +474,13 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 		}
 		if t.horizontal {
 			kw, kh = kh, kw
-			knob.X = tr.scale(t.Center().X - kw/2)
-			knob.Y = tr.scale(t.Center().Y)
+			knob.X = tr.scaleX(t.Center().X - kw/2)
+			knob.Y = tr.scaleY(t.Center().Y)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		} else {
-			knob.X = tr.scale(t.Center().X)
-			knob.Y = tr.scale(t.Center().Y - kh/2)
+			knob.X = tr.scaleX(t.Center().X)
+			knob.Y = tr.scaleY(t.Center().Y - kh/2)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		}
@@ -497,8 +498,8 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 				Fill:      true,
 				FillStyle: ColorTransitionPad,
 			},
-			X: tr.absX(tr.scale(x + (t.Width()-d)/2)),
-			Y: tr.absY(tr.scale(y + (t.Height()-d)/2)),
+			X: tr.absX(tr.scaleX(x + (t.Width()-d)/2)),
+			Y: tr.absY(tr.scaleY(y + (t.Height()-d)/2)),
 			D: tr.scale(d),
 		}
 		tr.buf.Circles.Put(shadow)
@@ -708,19 +709,19 @@ func (tr *tegRenderer) renderText(cfg *textConfig) {
 		}
 		if cfg.vertical {
 			if cfg.valign {
-				label.X = tr.absX(tr.scale(cfg.x + cfg.room/2 - offset))
-				label.Y = tr.absY(tr.scale(cfg.y))
+				label.X = tr.absX(tr.scaleX(cfg.x + cfg.room/2 - offset))
+				label.Y = tr.absY(tr.scaleY(cfg.y))
 			} else {
-				label.X = tr.absX(tr.scale(cfg.x - offset - 2*Padding))
-				label.Y = tr.absY(tr.scale(cfg.y + cfg.room/2))
+				label.X = tr.absX(tr.scaleX(cfg.x - offset - 2*Padding))
+				label.Y = tr.absY(tr.scaleY(cfg.y + cfg.room/2))
 			}
 		} else {
 			if cfg.valign {
-				label.X = tr.absX(tr.scale(cfg.x))
-				label.Y = tr.absY(tr.scale(cfg.y + cfg.room/2 + offset))
+				label.X = tr.absX(tr.scaleX(cfg.x))
+				label.Y = tr.absY(tr.scaleY(cfg.y + cfg.room/2 + offset))
 			} else {
-				label.X = tr.absX(tr.scale(cfg.x + cfg.room/2))
-				label.Y = tr.absY(tr.scale(cfg.y + offset + 2*Padding))
+				label.X = tr.absX(tr.scaleX(cfg.x + cfg.room/2))
+				label.Y = tr.absY(tr.scaleY(cfg.y + offset + 2*Padding))
 			}
 		}
 		tr.buf.Texts.Put(label)
@@ -744,8 +745,8 @@ func (tr *tegRenderer) renderDotRow(x, y, room float64, selected bool, count int
 		for i := 0; i < count; i++ {
 			tr.buf.Circles.Put(&render.Circle{
 				Style: style,
-				X:     tr.absX(tr.scale(x + (hmargin + float64(i)*(hspace+Thickness)))),
-				Y:     tr.absY(tr.scale(y)),
+				X:     tr.absX(tr.scaleX(x + (hmargin + float64(i)*(hspace+Thickness)))),
+				Y:     tr.absY(tr.scaleY(y)),
 				D:     tr.scale(Thickness),
 			})
 		}
@@ -753,8 +754,8 @@ func (tr *tegRenderer) renderDotRow(x, y, room float64, selected bool, count int
 		for i := 0; i < count; i++ {
 			tr.buf.Circles.Put(&render.Circle{
 				Style: style,
-				X:     tr.absX(tr.scale(x + (hmargin + float64(i)*(hspace+Thickness)))),
-				Y:     tr.absY(tr.scale(y)),
+				X:     tr.absX(tr.scaleX(x + (hmargin + float64(i)*(hspace+Thickness)))),
+				Y:     tr.absY(tr.scaleY(y)),
 				D:     tr.scale(Thickness),
 			})
 		}
@@ -778,8 +779,8 @@ func (tr *tegRenderer) renderDotColumn(x, y, room float64, selected bool, count 
 	for i := 0; i < count; i++ {
 		tr.buf.Circles.Put(&render.Circle{
 			Style: style,
-			X:     tr.absX(tr.scale(x)),
-			Y:     tr.absY(tr.scale(y + (vmargin + float64(i)*(vspace+Thickness)))),
+			X:     tr.absX(tr.scaleX(x)),
+			Y:     tr.absY(tr.scaleY(y + (vmargin + float64(i)*(vspace+Thickness)))),
 			D:     tr.scale(Thickness),
 		})
 	}
@@ -804,8 +805,8 @@ func (tr *tegRenderer) renderBarRow(x, y, room, Thickness float64, selected bool
 		tr.buf.Rects.Put(&render.Rect{
 			Style: style,
 
-			X: tr.absX(tr.scale(x + (float64(i)*hspace + float64(j)*w))),
-			Y: tr.absY(tr.scale(y)),
+			X: tr.absX(tr.scaleX(x + (float64(i)*hspace + float64(j)*w))),
+			Y: tr.absY(tr.scaleY(y)),
 			W: tr.scale(w),
 			H: tr.scale(h),
 		})
@@ -911,8 +912,8 @@ func (tr *tegRenderer) renderPlaceValue(x, y, room float64, selected bool, count
 					StrokeStyle: ColorDefault,
 					FillStyle:   ColorDefault,
 				},
-				X:        tr.absX(tr.scale(x + room/2)),
-				Y:        tr.absY(tr.scale(yPos - voffset - Padding)),
+				X:        tr.absX(tr.scaleX(x + room/2)),
+				Y:        tr.absY(tr.scaleY(yPos - voffset - Padding)),
 				Align:    render.TextAlignCenter,
 				Font:     TextFontNormal,
 				FontSize: tr.scale(TextFontSize),
@@ -938,8 +939,8 @@ func (tr *tegRenderer) renderPlaceValue(x, y, room float64, selected bool, count
 					StrokeStyle: ColorDefault,
 					FillStyle:   ColorDefault,
 				},
-				X:        tr.absX(tr.scale(x + room/2)),
-				Y:        tr.absY(tr.scale(yPos + voffset + PlaceFontSize - 1.8)),
+				X:        tr.absX(tr.scaleX(x + room/2)),
+				Y:        tr.absY(tr.scaleY(yPos + voffset + PlaceFontSize - 1.8)),
 				Align:    render.TextAlignCenter,
 				Font:     TextFontNormal,
 				FontSize: tr.scale(TextFontSize),
@@ -958,8 +959,20 @@ func (tr *tegRenderer) scale(f float64) float64 {
 	return f * tr.zoom
 }
 
+func (tr *tegRenderer) scaleX(x float64) float64 {
+	regX := tr.ctrl.CanvasWindowX - tr.ctrl.CanvasWidth/2
+	vecX := (regX - x) * tr.zoom
+	return regX - vecX
+}
+
+func (tr *tegRenderer) scaleY(y float64) float64 {
+	regY := tr.ctrl.CanvasWindowY - tr.ctrl.CanvasHeight/2
+	vecY := (regY - y) * tr.zoom
+	return regY - vecY
+}
+
 func (tr *tegRenderer) scalePoint(p *geometry.Point) *geometry.Point {
-	return &geometry.Point{p.X * tr.zoom, p.Y * tr.zoom}
+	return &geometry.Point{tr.scaleX(p.X), tr.scaleY(p.Y)}
 }
 
 func (tr *tegRenderer) absX(x float64) float64 {

@@ -6,27 +6,31 @@ import 'tegrender.js' as R
 
 ApplicationWindow {
     id: view
-    width: 700
+    width: 800
     height: 600
     color: "#ecf0f1"
     property alias ctrl: ctrl
-    property alias editMode: editbtn.checked
-    property alias viewMode: viewbtn.checked
+    property alias edit: modeEdit.checked
 
     toolBar: ToolBar {
         RowLayout {
             ToolButton {
                 text: "+"
-                onClicked: cv.zoom += 0.2
+                onClicked: {
+                    pinchArea.zoom = pinchArea.limit(pinchArea.zoom + 0.2)
+                }
             }
             ToolButton {
                 text: "-"
-                onClicked: cv.zoom -= 0.2
+                onClicked: {
+                   pinchArea.zoom = pinchArea.limit(pinchArea.zoom - 0.2)
+                }
             }
             ToolButton {
                 text: "json"
                 onClicked: ctrl.json()
             }
+
             Rectangle {
                 width: 3
                 anchors.top: parent.top
@@ -36,17 +40,206 @@ ApplicationWindow {
             }
             ExclusiveGroup { id: mode }
             RadioButton {
-                id: viewbtn
+                id: modeView
                 exclusiveGroup: mode
                 text: "View"
             }
             RadioButton {
-                id: editbtn
-                checked: true
+                id: modeEdit
                 exclusiveGroup: mode
+                checked: true
                 text: "Edit"
             }
         }
+    }
+    statusBar: StatusBar {
+        RowLayout {
+            Label { text: "Hello world" }
+        }
+    }
+
+    Canvas {
+        id: cv
+        anchors.fill: parent
+        canvasSize.width: 16536
+        canvasSize.height: 16536
+        canvasWindow.width: width
+        canvasWindow.height: height
+        tileSize: "1024x1024"
+
+        property real windowCenterX: cv.canvasWindow.x - cv.canvasSize.width/2
+        property real windowCenterY: cv.canvasWindow.y - cv.canvasSize.height/2
+
+        onPaint: {
+            var ctx = cv.getContext("2d")
+            if(!renderer.cache) {
+                console.error("error: cache broken")
+                return
+            }
+            R.render(ctx, region, renderer.cache)
+        }
+
+        onCanvasWindowChanged: {
+            if(canvasWindow.width !== ctrl.canvasWindowWidth ||
+                    canvasWindow.height !== ctrl.canvasWindowHeight) {
+                ctrl.canvasWindowWidth = canvasWindow.width
+                ctrl.canvasWindowHeight = canvasWindow.height
+                ctrl.flush()
+            }
+        }
+
+        Component.onCompleted: {
+            canvasWindow.x = canvasSize.width / 2
+            canvasWindow.y = canvasSize.height / 2
+            coldstart.start()
+        }
+    }
+
+    PinchArea {
+        id: pinchArea
+        anchors.fill: parent
+        z: 10
+        property real zoom: 1.0
+        property real initialZoom
+        onZoomChanged: ctrl.flush()
+
+        Behavior on zoom {
+            PropertyAnimation {
+                duration: 100
+            }
+        }
+
+        function limit(x) {
+            if(x > 10.0) {
+                x = 10.0
+            } else if (x < 0.2) {
+                x = 0.2
+            }
+            return x
+        }
+
+        onPinchStarted: {
+            initialZoom = zoom
+        }
+
+        onPinchUpdated: {
+            //   cv.canvasWindow.x += 4.0*(pinch.previousCenter.x - pinch.center.x)/pinchArea.zoom
+            //   cv.canvasWindow.y += 4.0*(pinch.previousCenter.y - pinch.center.y)/pinchArea.zoom
+            zoom = limit(initialZoom * pinch.scale)
+        }
+    }
+
+    MouseArea {
+        id: mouseArea
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        property real dragOffset: 50.0
+        property real cx0
+        property real cy0
+        property real x0
+        property real y0
+        property real dx
+        property real dy
+        property bool peeked
+        property bool rightPressed
+
+        focus: true
+        Keys.onPressed: {
+            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
+            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
+            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+
+            if(ctrl.modifierKeyControl && event.key === Qt.Key_V) {
+                modeView.checked = true
+            } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
+                modeEdit.checked = true
+            } else {
+                ctrl.keyPressed(event.key, event.text)
+            }
+
+            if(ctrl.modifierKeyControl) {
+                keyHint.setText(event.text)
+            }
+            event.accepted = true
+        }
+        Keys.onReleased: {
+            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
+            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
+            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
+
+            keyHint.setText("")
+            event.accepted = true
+            ctrl.flush()
+        }
+
+        onPressed: {
+            rightPressed = (mouse.button === Qt.RightButton)
+            if(!view.edit || rightPressed) {
+                cx0 = cv.canvasWindow.x
+                cy0 = cv.canvasWindow.y
+                x0 = mouse.x
+                y0 = mouse.y
+                dx = 0
+                dy = 0
+                peeked = false
+            } else if(view.edit) {
+                ctrl.mousePressed(mouse.x, mouse.y)
+                peeked = false
+            }
+        }
+
+        onPositionChanged: {
+            if(x0 != mouse.x || y0 != mouse.y) {
+                if (!view.edit || rightPressed) {
+                    dx = (x0 - mouse.x)
+                    dy = (y0 - mouse.y)
+                    cv.canvasWindow.x = cx0 + dx
+                    cv.canvasWindow.y = cy0 + dy
+                    cv.requestPaint()
+                    peeked = true
+                } else if(view.edit) {
+                    if(mouse.x < 0 + dragOffset) {
+                        cv.canvasWindow.x += -5.0/pinchArea.zoom
+                    } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
+                        cv.canvasWindow.x += 5.0/pinchArea.zoom
+                    }
+                    if(mouse.y < 0 + dragOffset) {
+                        cv.canvasWindow.y += -5.0/pinchArea.zoom
+                    } else if(mouse.y > cv.canvasWindow.height - dragOffset) {
+                        cv.canvasWindow.y += 5.0/pinchArea.zoom
+                    }
+                    ctrl.mouseMoved(mouse.x, mouse.y)
+                }
+            }
+        }
+
+        onReleased: {
+            if (view.edit && !rightPressed) {
+                ctrl.mouseReleased(mouse.x, mouse.y)
+            } else if (peeked){
+                dx = dx - dx/pinchArea.zoom
+                dy = dy - dy/pinchArea.zoom
+                cv.canvasWindow.x -= dx
+                cv.canvasWindow.y -= dy
+                ctrl.flush()
+            }
+
+            peeked = false
+            rightPressed = !(mouse.button === Qt.RightButton)
+        }
+
+        onDoubleClicked: {
+            if (view.edit && !rightPressed) {
+                ctrl.mouseDoubleClicked(mouse.x, mouse.y)
+            }
+        }
+    }
+
+    Timer {
+        id: coldstart
+        interval: 1000
+        onTriggered: ctrl.flush()
+        repeat: false
     }
 
     Ctrl {
@@ -57,7 +250,7 @@ ApplicationWindow {
         canvasWindowY: cv.canvasWindow.y
         canvasWindowHeight: cv.canvasWindow.height
         canvasWindowWidth: cv.canvasWindow.width
-        zoom: cv.zoom
+        zoom: pinchArea.zoom
     }
 
     RowLayout {
@@ -121,154 +314,11 @@ ApplicationWindow {
         font.pointSize: 20
         font.capitalization: Font.SmallCaps
         color: "#b4b4b4"
-        text: editMode ? "Edit mode" : "View mode"
+        text: view.edit ? "Edit mode" : "View mode"
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.rightMargin: 20
         anchors.topMargin: 15
-    }
-
-    /*
-    Image {
-        anchors.fill: parent
-        fillMode: Image.Tile
-        source: "grid.png"
-    }
-    */
-
-    Canvas {
-        id: cv
-        property real zoom: 1.0
-        anchors.fill: parent
-        canvasSize.width: 16536
-        canvasSize.height: 16536
-        canvasWindow.width: width
-        canvasWindow.height: height
-        tileSize: "1024x1024"
-
-        onPaint: {
-            var ctx = cv.getContext("2d")
-            if(!renderer.cache) {
-                console.error("error: cache broken")
-                return
-            }
-            R.render(ctx, region, cv.zoom, renderer.cache)
-        }
-
-        onCanvasWindowChanged: {
-            if(canvasWindow.width !== ctrl.canvasWindowWidth ||
-                    canvasWindow.height !== ctrl.canvasWindowHeight) {
-                ctrl.canvasWindowWidth = canvasWindow.width
-                ctrl.canvasWindowHeight = canvasWindow.height
-                ctrl.flush()
-            }
-        }
-
-        onZoomChanged: {
-            ctrl.zoom = cv.zoom
-            ctrl.flush()
-        }
-
-        Component.onCompleted: {
-            canvasWindow.x = canvasSize.width / 2
-            canvasWindow.y = canvasSize.height / 2
-            coldstart.start()
-        }
-    }
-
-    MouseArea {
-        id: io
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        property real dragOffset: 50.0
-        property int cx0
-        property int cy0
-        property int x0
-        property int y0
-        property bool rightPressed
-
-        focus: true
-        Keys.onPressed: {
-            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
-            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
-            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
-
-            if(ctrl.modifierKeyControl && event.key === Qt.Key_V) {
-                viewbtn.checked = true
-            } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
-                editbtn.checked = true
-            } else {
-                ctrl.keyPressed(event.key, event.text)
-            }
-
-            if(ctrl.modifierKeyControl) {
-                keyHint.setText(event.text)
-            }
-            event.accepted = true
-        }
-        Keys.onReleased: {
-            ctrl.modifierKeyShift = (event.modifiers & Qt.ShiftModifier) ? true : false
-            ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
-            ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
-
-            keyHint.setText("")
-            event.accepted = true
-            ctrl.flush()
-        }
-
-        onPressed: {
-            rightPressed = (mouse.button === Qt.RightButton)
-            if(viewMode || rightPressed) {
-                cx0 = cv.canvasWindow.x
-                cy0 = cv.canvasWindow.y
-                x0 = mouse.x
-                y0 = mouse.y
-            } else if(editMode) {
-                ctrl.mousePressed(mouse.x, mouse.y)
-            }
-        }
-
-        onPositionChanged: {
-            if(x0 != mouse.x || y0 != mouse.y) {
-                if (viewMode || rightPressed) {
-                    cv.canvasWindow.x = cx0 + (x0 - mouse.x)
-                    cv.canvasWindow.y = cy0 + (y0 - mouse.y)
-                    cv.requestPaint()
-                } else if(editMode) {
-                    if(mouse.x < 0 + dragOffset) {
-                        cv.canvasWindow.x += -5.0
-                    } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
-                        cv.canvasWindow.x += 5.0
-                    }
-                    if(mouse.y < 0 + dragOffset) {
-                        cv.canvasWindow.y += -5.0
-                    } else if(mouse.y > cv.canvasWindow.height - dragOffset) {
-                        cv.canvasWindow.y += 5.0
-                    }
-                    ctrl.mouseMoved(mouse.x, mouse.y)
-                }
-            }
-        }
-
-        onReleased: {
-            if (editMode && !rightPressed) {
-                ctrl.mouseReleased(mouse.x, mouse.y)
-            }
-            rightPressed = !(mouse.button === Qt.RightButton)
-        }
-
-        onDoubleClicked: {
-            if (editMode && !rightPressed) {
-                ctrl.mouseDoubleClicked(mouse.x, mouse.y)
-            }
-        }
-    }
-
-    Timer {
-        id: coldstart
-        interval: 1000
-        onTriggered: ctrl.flush()
-        repeat: false
     }
 
     Item {
