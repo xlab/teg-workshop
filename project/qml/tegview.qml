@@ -1,5 +1,6 @@
 import QtQuick 2.0
 import QtQuick.Controls 1.1
+import QtQuick.Controls.Styles 1.1
 import QtQuick.Layouts 1.1
 import TegView 1.0
 import 'tegrender.js' as R
@@ -9,52 +10,172 @@ ApplicationWindow {
     width: 800
     height: 600
     color: "#ecf0f1"
-    property alias ctrl: ctrl
-    property alias edit: modeEdit.checked
 
+    property bool sane: true
+    property string label: "Untitled document"
+    property string keyhint
+
+    property alias ctrl: ctrl
+    property alias lock: tglLock.enabled
+
+    property string panelBtnFgColor: "black"
+    property string panelBtnBgColor: "#15000000"
+    property string panelBtnFgPressedColor: "white"
+    property string panelBtnBgPressedColor: "#3498db"
+
+
+    title: "TEG Workshop / v1.0 beta"
     toolBar: ToolBar {
+        style: ToolBarStyle {
+            padding {
+                left: 8; right: 8 ; top: 3; bottom: 3
+            }
+
+            background: Rectangle {
+                implicitWidth: 100
+                implicitHeight: 60
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.bottom: parent.bottom
+                    anchors.right: parent.right
+                    height: 1
+                    color: "#999"
+                }
+            }
+        }
         RowLayout {
-            ToolButton {
-                text: "+"
+            anchors.fill: parent
+
+            XButton {
+                imageSrc: "icons/application-blue.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
+            }
+
+            XButton {
+                imageSrc: "icons/folder-horizontal-open.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
+            }
+
+            XButton {
+                imageSrc: "icons/disk.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
+            }
+
+            XSeparator{}
+
+            XButton {
+                imageSrc: "icons/magnifier-zoom-in.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
                 onClicked: {
                     pinchArea.zoom = pinchArea.limit(pinchArea.zoom + 0.2)
                 }
             }
-            ToolButton {
-                text: "-"
+
+            XButton {
+                imageSrc: "icons/magnifier-zoom-out.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
                 onClicked: {
-                   pinchArea.zoom = pinchArea.limit(pinchArea.zoom - 0.2)
+                    pinchArea.zoom = pinchArea.limit(pinchArea.zoom - 0.2)
                 }
             }
-            ToolButton {
-                text: "json"
-                onClicked: ctrl.json()
+
+            XButton {
+                imageSrc: "icons/magnifier-zoom-fit.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                onClicked: {
+                    cv.canvasWindow.x = cv.canvasSize.width / 2
+                    cv.canvasWindow.y = cv.canvasSize.height / 2
+                    pinchArea.zoom = 1.0
+                }
             }
 
-            Rectangle {
-                width: 3
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.margins: 2
-                color: "#34495e"
+            XSeparator{}
+
+            XButton {
+                imageSrc: "icons/table-sheet.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
             }
-            ExclusiveGroup { id: mode }
-            RadioButton {
-                id: modeView
-                exclusiveGroup: mode
-                text: "View"
+
+            XButton {
+                imageSrc: "icons/camera.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
             }
-            RadioButton {
-                id: modeEdit
-                exclusiveGroup: mode
-                checked: true
-                text: "Edit"
+
+            XSeparator{}
+
+            XToggle {
+                id: tglLock
+                imageSrc: "icons/lock.png"
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+            }
+
+            Item { Layout.fillWidth: true }
+
+            XButton {
+                Layout.alignment: Layout.Right
+                imageSrc: "icons/lifebuoy.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
+            }
+
+            XButton {
+                Layout.alignment: Layout.Right
+                imageSrc: "icons/information.png"
+                original: true
+                bgColor: panelBtnBgColor
+                bgPressedColor: panelBtnBgPressedColor
+                //onClicked:
             }
         }
     }
+
     statusBar: StatusBar {
         RowLayout {
-            Label { text: "Hello world" }
+            anchors.fill: parent
+            Label {
+                visible: view.keyhint.length > 0
+                text: view.keyhint
+            }
+            Item { Layout.fillWidth: true }
+            Rectangle {
+                width: 10
+                height: 10
+                color: view.sane ? "#16a085" : "#c0392b"
+            }
+            Label {
+                text: "Ready"
+            }
+            XSeparator{ color: "#2c3e50" }
+            Label { text: view.label }
+            XSeparator{ visible: view.lock; color: "#2c3e50" }
+            Label {
+                visible: view.lock
+                text: "View only"
+            }
         }
     }
 
@@ -66,9 +187,6 @@ ApplicationWindow {
         canvasWindow.width: width
         canvasWindow.height: height
         tileSize: "1024x1024"
-
-        property real windowCenterX: cv.canvasWindow.x - cv.canvasSize.width/2
-        property real windowCenterY: cv.canvasWindow.y - cv.canvasSize.height/2
 
         onPaint: {
             var ctx = cv.getContext("2d")
@@ -95,6 +213,8 @@ ApplicationWindow {
         }
     }
 
+
+
     PinchArea {
         id: pinchArea
         anchors.fill: parent
@@ -105,7 +225,7 @@ ApplicationWindow {
 
         Behavior on zoom {
             PropertyAnimation {
-                duration: 100
+                duration: 50
             }
         }
 
@@ -149,16 +269,14 @@ ApplicationWindow {
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
 
-            if(ctrl.modifierKeyControl && event.key === Qt.Key_V) {
-                modeView.checked = true
-            } else if (ctrl.modifierKeyControl && event.key === Qt.Key_E) {
-                modeEdit.checked = true
+            if(ctrl.modifierKeyControl && event.key === Qt.Key_L) {
+                tglLock.enabled = !tglLock.enabled
             } else {
                 ctrl.keyPressed(event.key, event.text)
             }
 
             if(ctrl.modifierKeyControl) {
-                keyHint.setText(event.text)
+                view.keyhint = getHint(event.text)
             }
             event.accepted = true
         }
@@ -167,14 +285,35 @@ ApplicationWindow {
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
 
-            keyHint.setText("")
+            view.keyhint = ""
             event.accepted = true
             ctrl.flush()
         }
 
+        function getHint(keystr) {
+            var text = ""
+            var plus = false
+            if(ctrl.modifierKeyControl){
+                text += "Ctrl"
+                plus = true
+            }
+            if(ctrl.modifierKeyAlt) {
+                text += (plus ? " + " : "") + "Alt"
+                plus = true
+            }
+            if(ctrl.modifierKeyShift) {
+                text += (plus ? " + " : "") + "Shift"
+                plus = true
+            }
+            if(keystr.length > 0) {
+                text += (plus ? " + ": "") + keystr.toUpperCase()
+            }
+            return text
+        }
+
         onPressed: {
             rightPressed = (mouse.button === Qt.RightButton)
-            if(!view.edit || rightPressed) {
+            if(view.lock || rightPressed) {
                 cx0 = cv.canvasWindow.x
                 cy0 = cv.canvasWindow.y
                 x0 = mouse.x
@@ -182,7 +321,7 @@ ApplicationWindow {
                 dx = 0
                 dy = 0
                 peeked = false
-            } else if(view.edit) {
+            } else if(!view.lock) {
                 ctrl.mousePressed(mouse.x, mouse.y)
                 peeked = false
             }
@@ -190,14 +329,14 @@ ApplicationWindow {
 
         onPositionChanged: {
             if(x0 != mouse.x || y0 != mouse.y) {
-                if (!view.edit || rightPressed) {
+                if (view.lock || rightPressed) {
                     dx = (x0 - mouse.x)
                     dy = (y0 - mouse.y)
                     cv.canvasWindow.x = cx0 + dx
                     cv.canvasWindow.y = cy0 + dy
                     cv.requestPaint()
                     peeked = true
-                } else if(view.edit) {
+                } else if(!view.lock) {
                     if(mouse.x < 0 + dragOffset) {
                         cv.canvasWindow.x += -5.0/pinchArea.zoom
                     } else if(mouse.x > cv.canvasWindow.width - dragOffset) {
@@ -214,7 +353,7 @@ ApplicationWindow {
         }
 
         onReleased: {
-            if (view.edit && !rightPressed) {
+            if (!view.lock && !rightPressed) {
                 ctrl.mouseReleased(mouse.x, mouse.y)
             } else if (peeked){
                 dx = dx - dx/pinchArea.zoom
@@ -229,7 +368,7 @@ ApplicationWindow {
         }
 
         onDoubleClicked: {
-            if (view.edit && !rightPressed) {
+            if (!view.lock && !rightPressed) {
                 ctrl.mouseDoubleClicked(mouse.x, mouse.y)
             }
         }
@@ -251,62 +390,6 @@ ApplicationWindow {
         canvasWindowHeight: cv.canvasWindow.height
         canvasWindowWidth: cv.canvasWindow.width
         zoom: pinchArea.zoom
-    }
-
-    RowLayout {
-        id: keyHintRow
-        z: 2
-        property string fontColor: "#34495e"
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
-        anchors.leftMargin: 10
-        anchors.bottomMargin: 10
-        spacing: 10
-        Text {
-            id: ctrlIndicator
-            text: "Ctrl"
-            font.capitalization: Font.SmallCaps
-            font.pointSize: 16
-            color: keyHintRow.fontColor
-            visible: ctrl.modifierKeyControl
-        }
-
-        Text {
-            id: altIndicator
-            text: (ctrlIndicator.visible ? "+ ": "") + "Alt"
-            font.capitalization: Font.SmallCaps
-            font.pointSize: 16
-            color: keyHintRow.fontColor
-            visible: ctrl.modifierKeyAlt
-        }
-
-        Text {
-            id: shiftIndicator
-            text: ((ctrlIndicator.visible || altIndicator.visible)  ? "+ ": "") + "Shift"
-            font.pointSize: 16
-            font.capitalization: Font.SmallCaps
-            color: keyHintRow.fontColor
-            visible: ctrl.modifierKeyShift
-        }
-
-        Text {
-            id: keyHint
-            font.pointSize: 16
-            font.capitalization: Font.SmallCaps
-            color: keyHintRow.fontColor
-            visible: false
-
-            function setText(text) {
-                if(text.length > 0) {
-                    this.visible = true
-                    this.text = ((ctrlIndicator.visible || altIndicator.visible || shiftIndicator.visible)  ? "+ ": "")
-                    this.text += text
-                } else {
-                    this.visible = false
-                    this.text = ""
-                }
-            }
-        }
     }
 
     Text {
