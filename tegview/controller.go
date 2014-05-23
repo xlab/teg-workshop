@@ -2,11 +2,13 @@ package tegview
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"math"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/atotto/clipboard"
 	"github.com/xlab/teg-workshop/geometry"
 )
 
@@ -53,6 +55,8 @@ type keyEvent struct {
 	kind    int
 }
 
+type stopEvent struct{}
+
 type Ctrl struct {
 	CanvasWidth        float64
 	CanvasHeight       float64
@@ -60,15 +64,19 @@ type Ctrl struct {
 	CanvasWindowY      float64
 	CanvasWindowHeight float64
 	CanvasWindowWidth  float64
-	Zoom, ZoomX, ZoomY float64
+	Zoom               float64
+
+	Title     string
+	ErrorText string
 
 	ModifierKeyControl bool
 	ModifierKeyShift   bool
 	ModifierKeyAlt     bool
 
-	mode   int
-	model  *teg
-	events chan interface{}
+	model   *teg
+	events  chan interface{}
+	actions chan interface{}
+	errors  chan error
 }
 
 func (c *Ctrl) KeyPressed(keycode int, text string) {
@@ -130,8 +138,32 @@ func (c *Ctrl) Json() {
 	}
 }
 
+func (c *Ctrl) NewWindow() {
+	c.actions <- actionNewWindow{}
+}
+
+func (c *Ctrl) OpenFile(name string) {
+	c.actions <- actionOpenFile{name}
+}
+
+func (c *Ctrl) SaveFile(name string) {
+	c.actions <- actionSaveFile{name}
+}
+
+func (c *Ctrl) QmlError(text string) {
+	c.errors <- errors.New(text)
+}
+
+func (c *Ctrl) Error(err error) {
+	c.errors <- err
+}
+
 func (c *Ctrl) Flush() {
 	c.model.update()
+}
+
+func (c *Ctrl) stopHandling() {
+	c.events <- &stopEvent{}
 }
 
 func (c *Ctrl) handleEvents() {
@@ -141,6 +173,8 @@ func (c *Ctrl) handleEvents() {
 		var copied bool
 		for {
 			switch ev := (<-c.events).(type) {
+			case *stopEvent:
+				return
 			case *keyEvent:
 				c.handleKeyEvent(ev)
 			case *mouseEvent:
@@ -231,6 +265,7 @@ func (c *Ctrl) handleEvents() {
 						c.model.update()
 					} else if focused != nil {
 						c.model.util.kind = UtilNone
+						c.model.util.max = nil
 						if point, cp := focused.(*controlPoint); cp {
 							point.Move(x, y)
 							c.model.update()
@@ -312,8 +347,20 @@ func (c *Ctrl) handleEvents() {
 						for _, g := range c.model.groups {
 							if g.Bound().Intersect(rect) {
 								c.model.selectItem(g)
+								for _, t := range g.inputs {
+									c.model.selectItem(t)
+								}
+								for _, t := range g.outputs {
+									c.model.selectItem(t)
+								}
 							} else {
 								c.model.deselectItem(g)
+								for _, t := range g.inputs {
+									c.model.deselectItem(t)
+								}
+								for _, t := range g.outputs {
+									c.model.deselectItem(t)
+								}
 							}
 						}
 						c.model.update()
@@ -428,7 +475,14 @@ func (c *Ctrl) handleEvents() {
 							}
 						}
 					} else {
-						c.alignItems(c.model.selected)
+						toAlign := make(map[item]bool, len(c.model.selected))
+						for it := range c.model.selected {
+							if _, ok := it.(*group); ok {
+								continue
+							}
+							toAlign[it] = true
+						}
+						c.alignItems(toAlign)
 					}
 
 					focused = nil
@@ -539,7 +593,6 @@ func (c *Ctrl) groupItems(items map[item]bool) {
 		}
 	}
 	g := c.model.addGroup(data)
-	g.updateBounds(true)
 	g.updateIO()
 	g.adjustIO()
 	g.Align()
@@ -554,6 +607,14 @@ func (c *Ctrl) ungroupItems(g *group) {
 	for it := range items {
 		c.model.selectItem(it)
 	}
+}
+
+func (c *Ctrl) clipboardPaste() (err error) {
+	str, err := clipboard.ReadAll()
+}
+
+func (c *Ctrl) clipboardCopy() (err error) {
+	err = clipboard.WriteAll(text)
 }
 
 func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
@@ -583,7 +644,6 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 			}
 			return
 		}
-
 		for it := range c.model.selected {
 			if g, ok := it.(*group); ok {
 				switch ev.keycode {
@@ -592,6 +652,10 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 					updated = true
 				case KeyCodeZ:
 					g.folded = !g.folded
+					updated = true
+				case KeyCodeO:
+					c.actions <- actionEditGroup{g.model, g.label}
+					c.model.deselectItem(g)
 					updated = true
 				case 16777219, 16777223, 8:
 					c.model.deselectItem(it)

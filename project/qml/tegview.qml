@@ -2,6 +2,7 @@ import QtQuick 2.0
 import QtQuick.Controls 1.1
 import QtQuick.Controls.Styles 1.1
 import QtQuick.Layouts 1.1
+import QtQuick.Dialogs 1.1
 import TegView 1.0
 import 'tegrender.js' as R
 
@@ -12,7 +13,8 @@ ApplicationWindow {
     color: "#ecf0f1"
 
     property bool sane: true
-    property string label: "Untitled document"
+    property string errorText
+    property string label: ctrl.title
     property string keyhint
 
     property alias ctrl: ctrl
@@ -23,6 +25,14 @@ ApplicationWindow {
     property string panelBtnFgPressedColor: "white"
     property string panelBtnBgPressedColor: "#3498db"
 
+    onActiveChanged: {
+        if(!active) {
+            ctrl.modifierKeyShift = false
+            ctrl.modifierKeyControl = false
+            ctrl.modifierKeyAlt = false
+            view.keyhint = ""
+        }
+    }
 
     title: "TEG Workshop / v1.0 beta"
     toolBar: ToolBar {
@@ -51,7 +61,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: ctrl.newWindow()
             }
 
             XButton {
@@ -59,7 +69,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: openFile.open()
             }
 
             XButton {
@@ -67,7 +77,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: saveFile.open()
             }
 
             XSeparator{}
@@ -119,7 +129,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: ctrl.test()
             }
 
             XSeparator{}
@@ -167,7 +177,7 @@ ApplicationWindow {
                 color: view.sane ? "#16a085" : "#c0392b"
             }
             Label {
-                text: "Ready"
+                text: view.sane ? "Ready" : view.errorText
             }
             XSeparator{ color: "#2c3e50" }
             Label { text: view.label }
@@ -176,6 +186,34 @@ ApplicationWindow {
                 visible: view.lock
                 text: "View only"
             }
+        }
+    }
+
+    FileDialog {
+        id: openFile
+        title: "Choose file to load"
+        selectExisting: true
+        nameFilters: [ "TEG files (*.teg *.json)", "All files (*)" ]
+        onAccepted: {
+            var path = "" + fileUrl
+            ctrl.openFile(path.replace("file://", ""))
+        }
+        onRejected: {
+            ctrl.qmlError("Opening canceled")
+        }
+    }
+
+    FileDialog {
+        id: saveFile
+        title: "Choose file to save"
+        selectExisting: false
+        nameFilters: [ "TEG files (*.teg *.json)", "All files (*)" ]
+        onAccepted: {
+            var path = "" + fileUrl
+            ctrl.saveFile(path.replace("file://", ""))
+        }
+        onRejected: {
+            ctrl.qmlError("Saving canceled")
         }
     }
 
@@ -276,7 +314,7 @@ ApplicationWindow {
             }
 
             if(ctrl.modifierKeyControl) {
-                view.keyhint = getHint(event.text)
+                view.keyhint = getHint(event.text.replace(/[^\u0000-\u007E]/g, ""))
             }
             event.accepted = true
         }
@@ -390,6 +428,27 @@ ApplicationWindow {
         canvasWindowHeight: cv.canvasWindow.height
         canvasWindowWidth: cv.canvasWindow.width
         zoom: pinchArea.zoom
+
+        onErrorTextChanged: {
+            if(errorText.length > 0) {
+                view.sane = false
+                view.errorText = errorText
+                errorHide.restart()
+            } else {
+                view.sane = true
+                view.errorText = ""
+            }
+        }
+    }
+
+    Timer {
+        id: errorHide
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            view.sane = true
+            view.errorText = ""
+        }
     }
 
     Text {

@@ -100,6 +100,10 @@ type tegRenderer struct {
 	canvasHeight  float64
 	viewboxWidth  float64
 	viewboxHeight float64
+	viewboxX      float64
+	viewboxY      float64
+
+	relateiveGlobalCenter *geometry.Point
 }
 
 func newTegRenderer(ctrl *Ctrl) *tegRenderer {
@@ -120,65 +124,45 @@ func (tr *tegRenderer) fixViewport() {
 	tr.canvasHeight = tr.ctrl.CanvasHeight
 	tr.viewboxWidth = tr.ctrl.CanvasWindowWidth
 	tr.viewboxHeight = tr.ctrl.CanvasWindowHeight
+	tr.viewboxX = tr.ctrl.CanvasWindowX
+	tr.viewboxY = tr.ctrl.CanvasWindowY
 }
 
 func (tr *tegRenderer) process(model *teg) {
-	for {
-		<-tr.task
-		tr.fixViewport()
-		tr.renderModel(model, nil, false)
-		tr.Screen = tr.buf
-		tr.buf = newTegBuffer()
-		tr.ready <- nil
-	}
+	<-tr.task
+	tr.fixViewport()
+	tr.renderModel(model, pt(0, 0), false)
+	tr.Screen = tr.buf
+	tr.buf = newTegBuffer()
+	tr.ready <- nil
 }
 
 func (tr *tegRenderer) renderModel(tg *teg, shift *geometry.Point, nested bool) {
-	var dx, dy float64
-	if nested {
-		dx, dy = shift.X, shift.Y
-	}
 	for _, g := range tg.groups {
-		g.Shift(dx, dy)
 		tr.renderGroup(g, shift, nested)
-		g.Shift(-dx, -dy)
 	}
 	for _, p := range tg.places {
-		p.Shift(dx, dy)
-		tr.renderPlace(p, nested)
-		p.Shift(-dx, -dy)
+		tr.renderPlace(p, shift, nested)
 	}
 	for _, t := range tg.transitions {
 		if !nested || t.kind == TransitionInternal {
-			t.Shift(dx, dy)
-			tr.renderTransition(t, nested)
+			tr.renderTransition(t, shift, nested)
 			for i, p := range t.in {
-				p.Shift(dx, dy)
-				tr.renderArc(t, p, true, i)
-				p.Shift(-dx, -dy)
+				tr.renderArc(t, shift, p, shift, true, i)
 			}
 			for i, p := range t.out {
-				p.Shift(dx, dy)
-				tr.renderArc(t, p, false, i)
-				p.Shift(-dx, -dy)
+				tr.renderArc(t, shift, p, shift, false, i)
 			}
-			t.Shift(-dx, -dy)
 		}
 	}
 	if !nested && tr.ctrl.ModifierKeyAlt {
 		for _, t := range tg.transitions {
-			t.Shift(dx, dy)
 			for i, p := range t.in {
-				p.Shift(dx, dy)
-				tr.renderConnection(t, p, true, i)
-				p.Shift(-dx, -dy)
+				tr.renderConnection(t, shift, p, shift, true, i)
 			}
 			for i, p := range t.out {
-				p.Shift(dx, dy)
-				tr.renderConnection(t, p, false, i)
-				p.Shift(-dx, -dy)
+				tr.renderConnection(t, shift, p, shift, false, i)
 			}
-			t.Shift(-dx, -dy)
 		}
 	}
 	if !nested && tg.util.kind != UtilNone {
@@ -186,11 +170,8 @@ func (tr *tegRenderer) renderModel(tg *teg, shift *geometry.Point, nested bool) 
 	}
 }
 
-func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool) {
-	var dxRoot, dyRoot float64
-	if nested {
-		dxRoot, dyRoot = shift.X, shift.Y
-	}
+func (tr *tegRenderer) renderGroup(g *group, shiftRoot *geometry.Point, nested bool) {
+	gx, gy := g.X()+shiftRoot.X, g.Y()+shiftRoot.Y
 	frame := &render.RoundedRect{
 		Style: &render.Style{
 			LineWidth:   tr.scale(2.0),
@@ -199,8 +180,8 @@ func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool)
 			Fill:        true,
 			FillStyle:   ColorGroupBg,
 		},
-		X: tr.absX(tr.scaleX(g.X())),
-		Y: tr.absY(tr.scaleY(g.Y())),
+		X: tr.absX(tr.scaleX(gx)),
+		Y: tr.absY(tr.scaleY(gy)),
 		W: tr.scale(g.Width()),
 		H: tr.scale(g.Height()),
 		R: tr.scale(GroupFrameR),
@@ -212,66 +193,62 @@ func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool)
 	tr.buf.RRects.Put(frame)
 
 	// Internals rendering code
-	dx, dy := calcItemsShift(g.Center(), g.model.Items())
+	center := g.Center()
+	center.X, center.Y = center.X+shiftRoot.X, center.Y+shiftRoot.Y
+	shift := calcItemsShift(center, g.model.Items())
 
 	for _, t := range g.inputs {
-		tr.renderTransition(t, nested)
+		tr.renderTransition(t, shiftRoot, nested)
 		if len(t.label) > 0 && !nested {
 			tr.renderIOText(t, true)
 		}
-		for i, p := range t.in {
-			if nested {
-				p.Shift(dxRoot, dyRoot)
-				tr.renderArc(t, p, true, i)
-				p.Shift(-dxRoot, -dyRoot)
-			} else {
-				tr.renderArc(t, p, true, i)
-			}
-			if !nested && tr.ctrl.ModifierKeyAlt {
-				tr.renderConnection(t, p, true, i)
-			}
-		}
 		if !g.folded {
 			for i, p := range t.out {
-				p.Shift(dx, dy)
-				ctrl := p.inControl
-				p.inControl = t.newControlPoint(p.Center(), true)
-				tr.renderArc(t, p, false, i)
-				p.inControl = ctrl
-				p.Shift(-dx, -dy)
+				if nested {
+					tr.renderArc(t, shiftRoot, p, shift, false, i)
+				} else {
+					tr.renderArc(t, pt(0, 0), p, shift, false, i)
+				}
+			}
+		}
+		for i, p := range t.in {
+			if nested {
+				tr.renderArc(t, shiftRoot, p, shiftRoot, true, i)
+			} else {
+				tr.renderArc(t, pt(0, 0), p, shiftRoot, true, i)
+			}
+			if !nested && tr.ctrl.ModifierKeyAlt {
+				tr.renderConnection(t, pt(0, 0), p, pt(0, 0), true, i)
 			}
 		}
 	}
 	for _, t := range g.outputs {
-		tr.renderTransition(t, nested)
+		tr.renderTransition(t, shiftRoot, nested)
 		if len(t.label) > 0 && !nested {
 			tr.renderIOText(t, false)
 		}
 		if !g.folded {
 			for i, p := range t.in {
-				p.Shift(dx, dy)
-				ctrl := p.outControl
-				p.outControl = t.newControlPoint(p.Center(), false)
-				tr.renderArc(t, p, true, i)
-				p.outControl = ctrl
-				p.Shift(-dx, -dy)
+				if nested {
+					tr.renderArc(t, shiftRoot, p, shift, true, i)
+				} else {
+					tr.renderArc(t, pt(0, 0), p, shift, true, i)
+				}
 			}
 		}
 		for i, p := range t.out {
 			if nested {
-				p.Shift(dxRoot, dyRoot)
-				tr.renderArc(t, p, false, i)
-				p.Shift(-dxRoot, -dyRoot)
+				tr.renderArc(t, shiftRoot, p, shiftRoot, false, i)
 			} else {
-				tr.renderArc(t, p, false, i)
+				tr.renderArc(t, pt(0, 0), p, pt(0, 0), false, i)
 			}
 			if !nested && tr.ctrl.ModifierKeyAlt {
-				tr.renderConnection(t, p, false, i)
+				tr.renderConnection(t, pt(0, 0), p, pt(0, 0), false, i)
 			}
 		}
 	}
 	if !g.folded {
-		tr.renderModel(g.model, pt(dx, dy), true)
+		tr.renderModel(g.model, shift, true)
 
 		// Render label
 		if len(g.label) < 1 || nested {
@@ -280,7 +257,7 @@ func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool)
 		room := g.Width() - GroupMargin*2
 		breaklen := int(math.Max(room/TextFontSize, 16))
 		cfg := textConfig{
-			x: g.X() + GroupMargin, y: g.Y() + g.Height() + TextFontSize,
+			x: gx + GroupMargin, y: gy + g.Height() + TextFontSize,
 			room: room, color: ColorComments, align: render.TextAlignCenter,
 			text: fmt.Sprintf("// %s", g.label), breaklen: breaklen, oblique: true,
 		}
@@ -299,7 +276,7 @@ func (tr *tegRenderer) renderGroup(g *group, shift *geometry.Point, nested bool)
 	vmargin := calcCenteringMargin(g.Height(), theight, 1)
 
 	cfg := textConfig{
-		x: g.X() + GroupMargin, y: g.Y() + GroupMargin + vmargin,
+		x: gx + GroupMargin, y: gy + GroupMargin + vmargin,
 		room: room, color: ColorGroupFrame, align: render.TextAlignCenter,
 		text: text, breaklen: breaklen, fontsize: GroupFontSize,
 	}
@@ -316,7 +293,7 @@ func (tr *tegRenderer) renderIOText(t *transition, input bool) {
 	_, theight := calcTextFragments("// "+t.label, TextFontSize, 16)
 	if t.horizontal {
 		if input {
-			cfg.x = t.X() + 3*Padding + theight
+			cfg.x = t.X() + t.Width()/2 + theight
 			cfg.y = t.Y() - 3*Padding
 			cfg.align = render.TextAlignRight
 			cfg.text = t.label + " //"
@@ -382,8 +359,8 @@ func (tr *tegRenderer) renderUtility(u *utility) {
 	}
 }
 
-func (tr *tegRenderer) renderPlace(p *place, nested bool) {
-	x, y := p.X(), p.Y()
+func (tr *tegRenderer) renderPlace(p *place, shift *geometry.Point, nested bool) {
+	x, y := p.X()+shift.X, p.Y()+shift.Y
 	pad := &render.Circle{
 		Style: &render.Style{
 			LineWidth:   tr.scale(2.0),
@@ -396,7 +373,7 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 	}
 	if p.IsSelected() {
 		makeControlPoint := func(cp *controlPoint) *render.Rect {
-			xc, yc := cp.X(), cp.Y()
+			xc, yc := cp.X()+shift.X, cp.Y()+shift.Y
 			return &render.Rect{
 				Style: &render.Style{
 					Fill:      true,
@@ -429,8 +406,8 @@ func (tr *tegRenderer) renderPlace(p *place, nested bool) {
 	}
 }
 
-func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
-	x, y := t.X(), t.Y()
+func (tr *tegRenderer) renderTransition(t *transition, shift *geometry.Point, nested bool) {
+	x, y := t.X()+shift.X, t.Y()+shift.Y
 	rect := &render.Rect{
 		Style: &render.Style{
 			Fill:      true,
@@ -453,13 +430,13 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 		}
 		if t.horizontal {
 			kw, kh = kh, kw
-			knob.X = tr.scaleX(t.Center().X - kw/2)
-			knob.Y = tr.scaleY(t.Center().Y - kh)
+			knob.X = tr.scaleX(t.Center().X + shift.X - kw/2)
+			knob.Y = tr.scaleY(t.Center().Y + shift.Y - kh)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		} else {
-			knob.X = tr.scaleX(t.Center().X - kw)
-			knob.Y = tr.scaleY(t.Center().Y - kh/2)
+			knob.X = tr.scaleX(t.Center().X + shift.X - kw)
+			knob.Y = tr.scaleY(t.Center().Y + shift.Y - kh/2)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		}
@@ -474,13 +451,13 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 		}
 		if t.horizontal {
 			kw, kh = kh, kw
-			knob.X = tr.scaleX(t.Center().X - kw/2)
-			knob.Y = tr.scaleY(t.Center().Y)
+			knob.X = tr.scaleX(t.Center().X + shift.X - kw/2)
+			knob.Y = tr.scaleY(t.Center().Y + shift.Y)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		} else {
-			knob.X = tr.scaleX(t.Center().X)
-			knob.Y = tr.scaleY(t.Center().Y - kh/2)
+			knob.X = tr.scaleX(t.Center().X + shift.X)
+			knob.Y = tr.scaleY(t.Center().Y + shift.Y - kh/2)
 			knob.W = tr.scale(kw)
 			knob.H = tr.scale(kh)
 		}
@@ -523,6 +500,7 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 			cfg.y = y + t.Height()/2
 			cfg.room = t.Height()
 			cfg.valign = true
+			cfg.align = render.TextAlignLeft
 			tr.renderText(&cfg)
 		} else {
 			cfg.x = x
@@ -533,7 +511,8 @@ func (tr *tegRenderer) renderTransition(t *transition, nested bool) {
 	}
 }
 
-func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index int) {
+func (tr *tegRenderer) renderArc(t *transition, shiftT *geometry.Point,
+	p *place, shiftP *geometry.Point, inbound bool, index int) {
 	thick := 2.0
 	var control *controlPoint
 	var count int
@@ -547,8 +526,9 @@ func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index in
 	}
 	selected := t.IsSelected() && p.IsSelected()
 	xyC1 := control.Center()
-	endT := calcBorderPointTransition(t, inbound, count, index)
-	endP := calcBorderPointPlace(p, xyC1.X, xyC1.Y)
+	xyC1.X, xyC1.Y = xyC1.X+shiftP.X, xyC1.Y+shiftP.Y
+	endT := calcBorderPointTransition(t, shiftT, inbound, count, index)
+	endP := calcBorderPointPlace(p, shiftP, xyC1.X, xyC1.Y)
 	var endPointed *end
 	if inbound {
 		endPointed = endT
@@ -608,7 +588,8 @@ func (tr *tegRenderer) renderArc(t *transition, p *place, inbound bool, index in
 	tr.buf.Polys.Put(pointer)
 }
 
-func (tr *tegRenderer) renderConnection(t *transition, p *place, inbound bool, index int) {
+func (tr *tegRenderer) renderConnection(t *transition, shiftT *geometry.Point,
+	p *place, shiftP *geometry.Point, inbound bool, index int) {
 	var control *controlPoint
 	var count int
 	if inbound {
@@ -619,8 +600,9 @@ func (tr *tegRenderer) renderConnection(t *transition, p *place, inbound bool, i
 		count = len(t.out)
 	}
 	xyC1 := control.Center()
-	endT := calcBorderPointTransition(t, inbound, count, index)
-	endP := calcBorderPointPlace(p, xyC1.X, xyC1.Y)
+	xyC1.X, xyC1.Y = xyC1.X+shiftP.X, xyC1.Y+shiftP.Y
+	endT := calcBorderPointTransition(t, shiftT, inbound, count, index)
+	endP := calcBorderPointPlace(p, shiftP, xyC1.X, xyC1.Y)
 	var xyC2 *geometry.Point
 	var start, end *geometry.Point
 	if inbound {
@@ -960,13 +942,13 @@ func (tr *tegRenderer) scale(f float64) float64 {
 }
 
 func (tr *tegRenderer) scaleX(x float64) float64 {
-	regX := tr.ctrl.CanvasWindowX - tr.ctrl.CanvasWidth/2
+	regX := tr.viewboxX - tr.canvasWidth/2
 	vecX := (regX - x) * tr.zoom
 	return regX - vecX
 }
 
 func (tr *tegRenderer) scaleY(y float64) float64 {
-	regY := tr.ctrl.CanvasWindowY - tr.ctrl.CanvasHeight/2
+	regY := tr.viewboxY - tr.canvasHeight/2
 	vecY := (regY - y) * tr.zoom
 	return regY - vecY
 }
@@ -1009,21 +991,22 @@ type end struct {
 	x, y, angle, xTip, yTip float64
 }
 
-func calcBorderPointPlace(p *place, x, y float64) *end {
-	angle := math.Atan2(x-p.Center().X, y-p.Center().Y)
+func calcBorderPointPlace(p *place, shift *geometry.Point, x, y float64) *end {
+	px, py := p.Center().X+shift.X, p.Center().Y+shift.Y
+	angle := math.Atan2(x-px, y-py)
 	radius := p.Width() / 2
 	dxTip := (radius + BorderPlaceTipDist) * math.Sin(angle)
 	dyTip := (radius + BorderPlaceTipDist) * math.Cos(angle)
 	dx := (radius + BorderPlaceDist) * math.Sin(angle)
 	dy := (radius + BorderPlaceDist) * math.Cos(angle)
 	return &end{
-		x: p.Center().X + dx, y: p.Center().Y + dy,
-		xTip: p.Center().X + dxTip, yTip: p.Center().Y + dyTip,
+		x: px + dx, y: py + dy,
+		xTip: px + dxTip, yTip: py + dyTip,
 		angle: angle,
 	}
 }
 
-func calcBorderPointTransition(t *transition, inbound bool, count, index int) *end {
+func calcBorderPointTransition(t *transition, shift *geometry.Point, inbound bool, count, index int) *end {
 	thick := 2.0
 	var x, y float64
 
@@ -1041,6 +1024,7 @@ func calcBorderPointTransition(t *transition, inbound bool, count, index int) *e
 		x = t.X() + t.Width() + BorderTransitionDist
 		y = t.Y()
 	}
+	x, y = x+shift.X, y+shift.Y
 	if t.horizontal {
 		space := calcSpacing(t.Width(), thick, count)
 		margin := calcCenteringMargin(t.Width(), 1.0, count)
