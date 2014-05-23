@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/xlab/clipboard"
 	"github.com/xlab/teg-workshop/workspace"
 	"gopkg.in/qml.v0"
 )
@@ -45,6 +46,7 @@ func NewView() *View {
 				ctrl.events = make(chan interface{}, 100)
 				ctrl.actions = make(chan interface{}, 100)
 				ctrl.errors = make(chan error, 100)
+				ctrl.clip = clipboard.New(engine)
 
 				renderer.ctrl = ctrl
 

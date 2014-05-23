@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/atotto/clipboard"
+	"github.com/xlab/clipboard"
 	"github.com/xlab/teg-workshop/geometry"
 )
 
@@ -31,6 +31,7 @@ const (
 
 const (
 	KeyCodeC = 67
+	KeyCodeV = 86
 	KeyCodeD = 68
 	KeyCodeF = 70
 	KeyCodeG = 71
@@ -74,6 +75,7 @@ type Ctrl struct {
 	ModifierKeyAlt     bool
 
 	model   *teg
+	clip    *clipboard.Clipboard
 	events  chan interface{}
 	actions chan interface{}
 	errors  chan error
@@ -610,11 +612,32 @@ func (c *Ctrl) ungroupItems(g *group) {
 }
 
 func (c *Ctrl) clipboardPaste() (err error) {
-	str, err := clipboard.ReadAll()
+	str, err := c.clip.ReadAll()
+	if err != nil {
+		return
+	}
+	model := &Teg{}
+	if err = json.Unmarshal([]byte(str), model); err != nil {
+		return
+	}
+	items := c.model.ConstructItems(model)
+	center := pt(c.CanvasWindowX-c.CanvasWidth/2, c.CanvasWindowY-c.CanvasHeight/2)
+	shift := calcItemsShift(center, items)
+	for it := range items {
+		it.Shift(shift.X, shift.Y)
+		c.model.selectItem(it)
+	}
+	return
 }
 
 func (c *Ctrl) clipboardCopy() (err error) {
-	err = clipboard.WriteAll(text)
+	model := c.model.ModelItems(c.model.selected)
+	buf, err := json.Marshal(model)
+	if err != nil {
+		return
+	}
+	c.clip.WriteAll(string(buf))
+	return
 }
 
 func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
@@ -622,6 +645,11 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	// log.Printf("key: %v (%v)", ev.keycode, ev.text)
 	if c.ModifierKeyControl {
 		switch ev.keycode {
+		case KeyCodeC:
+			c.clipboardCopy()
+		case KeyCodeV:
+			c.model.deselectAll()
+			c.clipboardPaste()
 		case KeyCodeG:
 			proxies := 0
 			for it := range c.model.selected {

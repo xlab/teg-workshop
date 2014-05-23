@@ -295,6 +295,28 @@ func (tg *teg) Model() *Teg {
 	return model
 }
 
+func (tg *teg) ModelItems(items map[item]bool) *Teg {
+	sub := newTeg()
+	for it := range items {
+		if p, ok := it.(*place); ok {
+			sub.places = append(sub.places, p)
+		} else if t, ok := it.(*transition); ok {
+			sub.transitions = append(sub.transitions, t)
+		} else if g, ok := it.(*group); ok {
+			sub.groups = append(sub.groups, g)
+		}
+	}
+	return sub.Model()
+}
+
+func (tg *teg) ConstructItems(model *Teg) (items map[item]bool) {
+	sub := newTeg()
+	sub.Construct(model)
+	items = sub.Items()
+	tg.transferItems(sub, items)
+	return
+}
+
 func (cp *controlPoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal(cp.Model())
 }
@@ -332,14 +354,6 @@ func constructPlace(model *Place) *place {
 		timer:   model.Timer,
 		counter: model.Counter,
 		label:   model.Label,
-	}
-	in := model.InControl
-	if in != nil {
-		p.inControl = newControlPoint(in.X, in.Y, in.Modified)
-	}
-	out := model.OutControl
-	if out != nil {
-		p.outControl = newControlPoint(out.X, out.Y, out.Modified)
 	}
 	return p
 }
@@ -393,6 +407,10 @@ func (tg *teg) Construct(model *Teg) {
 				}
 				pNew.out = tNew
 				tNew.in = append(tNew.in, pNew)
+				if p.OutControl != nil {
+					pNew.outControl = newControlPoint(p.OutControl.X, p.OutControl.Y, p.OutControl.Modified)
+				}
+				pNew.refineControls()
 			}
 			for _, p := range t.Out {
 				pInner := gNew.model.findById(p.Id).(*place)
@@ -417,6 +435,10 @@ func (tg *teg) Construct(model *Teg) {
 				}
 				pNew.in = tNew
 				tNew.out = append(tNew.out, pNew)
+				if p.InControl != nil {
+					pNew.inControl = newControlPoint(p.InControl.X, p.InControl.Y, p.InControl.Modified)
+				}
+				pNew.refineControls()
 			}
 			for _, p := range t.In {
 				pInner := gNew.model.findById(p.Id).(*place)
@@ -457,6 +479,10 @@ func (tg *teg) Construct(model *Teg) {
 			}
 			pNew.out = tNew
 			tNew.in = append(tNew.in, pNew)
+			if p.OutControl != nil {
+				pNew.outControl = newControlPoint(p.OutControl.X, p.OutControl.Y, p.OutControl.Modified)
+			}
+			pNew.refineControls()
 		}
 		for _, p := range t.Out {
 			pNew, ok := madePlaces[p.Id]
@@ -468,6 +494,10 @@ func (tg *teg) Construct(model *Teg) {
 			}
 			pNew.in = tNew
 			tNew.out = append(tNew.out, pNew)
+			if p.InControl != nil {
+				pNew.inControl = newControlPoint(p.InControl.X, p.InControl.Y, p.InControl.Modified)
+			}
+			pNew.refineControls()
 		}
 		tNew.refineSize()
 		tg.transitions = append(tg.transitions, tNew)
