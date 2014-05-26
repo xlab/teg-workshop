@@ -1,4 +1,4 @@
-package maxplus
+package dioid
 
 // #cgo LDFLAGS: -lstdc++
 // #include "bridge.h"

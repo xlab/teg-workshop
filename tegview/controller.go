@@ -8,8 +8,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/xlab/clipboard"
 	"github.com/xlab/teg-workshop/geometry"
+	"github.com/xlab/teg-workshop/planeview"
+	"github.com/xlab/teg-workshop/util"
+	"gopkg.in/qml.v0"
+	"gopkg.in/xlab/clipboard.v1"
 )
 
 const (
@@ -30,6 +33,7 @@ const (
 )
 
 const (
+	KeyCodeA = 65
 	KeyCodeC = 67
 	KeyCodeV = 86
 	KeyCodeD = 68
@@ -150,6 +154,45 @@ func (c *Ctrl) OpenFile(name string) {
 
 func (c *Ctrl) SaveFile(name string) {
 	c.actions <- actionSaveFile{name}
+}
+
+type ScreenshotScene struct {
+	CanvasWidth   float64
+	CanvasHeight  float64
+	Width, Height float64
+	X, Y          float64
+}
+
+func (c *Ctrl) PrepareScene() *ScreenshotScene {
+	margin := 50.0
+	x0, y0, x1, y1 := detectBounds(c.model.Items())
+	w, h := x1-x0, y1-y0
+	return &ScreenshotScene{
+		Width:  w + 2*margin,
+		Height: h + 2*margin,
+		X:      x0 + c.CanvasWindowWidth/2 - margin,
+		Y:      y0 + c.CanvasWindowHeight/2 - margin,
+	}
+}
+
+func (c *Ctrl) SaveImage(name string, width int, height int, data *qml.Map) bool {
+	err := util.SaveCanvasImage(name, width, height, data)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func (c *Ctrl) PlaneView() {
+	infos := make([]*planeview.Plane, 0, len(c.model.infos))
+	for _, p := range c.model.infos {
+		infos = append(infos, p)
+	}
+	c.actions <- actionPlaneView{
+		models: infos,
+		id:     c.model.id,
+		title:  c.Title,
+	}
 }
 
 func (c *Ctrl) QmlError(text string) {
@@ -531,120 +574,15 @@ func (c *Ctrl) handleEvents() {
 	}()
 }
 
-func (c *Ctrl) alignItems(items map[item]bool) {
-	first := true
-	var dx, dy float64
-	toOrder := make(map[*transition]bool, len(c.model.transitions))
-	for it := range items {
-		if first {
-			dx, dy = it.Align()
-			if p, ok := it.(*place); ok {
-				if p.in != nil {
-					toOrder[p.in] = true
-				}
-				if p.out != nil {
-					toOrder[p.out] = true
-				}
-			}
-			first = false
-			continue
-		}
-		if p, ok := it.(*place); ok {
-			p.Shift(dx, dy)
-			if p.in != nil {
-				toOrder[p.in] = true
-			}
-			if p.out != nil {
-				toOrder[p.out] = true
-			}
-		} else if t, ok := it.(*transition); ok {
-			if t.proxy == nil {
-				t.Shift(dx, dy)
-			}
-		} else {
-			it.Shift(dx, dy)
-		}
-	}
-	for t := range toOrder {
-		t.OrderArcs(true)
-		t.OrderArcs(false)
-	}
-}
-
-func (c *Ctrl) groupItems(items map[item]bool) {
-	data := make(map[item]bool, len(items))
-	for it := range items {
-		switch it.(type) {
-		case *transition:
-			if it.(*transition).KindInGroup(items) == TransitionExposed {
-				return // no way
-			} else if it.(*transition).proxy == nil {
-				data[it] = true
-			}
-		case *place:
-			if it.(*place).KindInGroup(items) == PlaceExposed {
-				return // no way
-			}
-			data[it] = true
-		case *group:
-			if it.(*group).KindInGroup(items) == GroupExposed {
-				return // no way
-			}
-			data[it] = true
-
-		}
-	}
-	g := c.model.addGroup(data)
-	g.updateIO()
-	g.adjustIO()
-	g.Align()
-	c.model.deselectAll()
-	c.model.selectItem(g)
-}
-
-func (c *Ctrl) ungroupItems(g *group) {
-	c.model.deselectAll()
-	items := c.model.flatGroup(g)
-	c.alignItems(items)
-	for it := range items {
-		c.model.selectItem(it)
-	}
-}
-
-func (c *Ctrl) clipboardPaste() (err error) {
-	str, err := c.clip.ReadAll()
-	if err != nil {
-		return
-	}
-	model := &Teg{}
-	if err = json.Unmarshal([]byte(str), model); err != nil {
-		return
-	}
-	items := c.model.ConstructItems(model)
-	center := pt(c.CanvasWindowX-c.CanvasWidth/2, c.CanvasWindowY-c.CanvasHeight/2)
-	shift := calcItemsShift(center, items)
-	for it := range items {
-		it.Shift(shift.X, shift.Y)
-		c.model.selectItem(it)
-	}
-	return
-}
-
-func (c *Ctrl) clipboardCopy() (err error) {
-	model := c.model.ModelItems(c.model.selected)
-	buf, err := json.Marshal(model)
-	if err != nil {
-		return
-	}
-	c.clip.WriteAll(string(buf))
-	return
-}
-
 func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	var updated bool
 	// log.Printf("key: %v (%v)", ev.keycode, ev.text)
 	if c.ModifierKeyControl {
 		switch ev.keycode {
+		case KeyCodeA:
+			for it := range c.model.Items() {
+				c.model.selectItem(it)
+			}
 		case KeyCodeC:
 			c.clipboardCopy()
 		case KeyCodeV:
@@ -765,4 +703,113 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	if updated {
 		c.model.update()
 	}
+}
+
+func (c *Ctrl) alignItems(items map[item]bool) {
+	first := true
+	var dx, dy float64
+	toOrder := make(map[*transition]bool, len(c.model.transitions))
+	for it := range items {
+		if first {
+			dx, dy = it.Align()
+			if p, ok := it.(*place); ok {
+				if p.in != nil {
+					toOrder[p.in] = true
+				}
+				if p.out != nil {
+					toOrder[p.out] = true
+				}
+			}
+			first = false
+			continue
+		}
+		if p, ok := it.(*place); ok {
+			p.Shift(dx, dy)
+			if p.in != nil {
+				toOrder[p.in] = true
+			}
+			if p.out != nil {
+				toOrder[p.out] = true
+			}
+		} else if t, ok := it.(*transition); ok {
+			if t.proxy == nil {
+				t.Shift(dx, dy)
+			}
+		} else {
+			it.Shift(dx, dy)
+		}
+	}
+	for t := range toOrder {
+		t.OrderArcs(true)
+		t.OrderArcs(false)
+	}
+}
+
+func (c *Ctrl) groupItems(items map[item]bool) {
+	data := make(map[item]bool, len(items))
+	for it := range items {
+		switch it.(type) {
+		case *transition:
+			if it.(*transition).KindInGroup(items) == TransitionExposed {
+				return // no way
+			} else if it.(*transition).proxy == nil {
+				data[it] = true
+			}
+		case *place:
+			if it.(*place).KindInGroup(items) == PlaceExposed {
+				return // no way
+			}
+			data[it] = true
+		case *group:
+			if it.(*group).KindInGroup(items) == GroupExposed {
+				return // no way
+			}
+			data[it] = true
+
+		}
+	}
+	g := c.model.addGroup(data)
+	g.updateIO()
+	g.adjustIO()
+	g.Align()
+	c.model.deselectAll()
+	c.model.selectItem(g)
+}
+
+func (c *Ctrl) ungroupItems(g *group) {
+	c.model.deselectAll()
+	items := c.model.flatGroup(g)
+	c.alignItems(items)
+	for it := range items {
+		c.model.selectItem(it)
+	}
+}
+
+func (c *Ctrl) clipboardPaste() (err error) {
+	str, err := c.clip.ReadAll()
+	if err != nil {
+		return
+	}
+	model := &Teg{}
+	if err = json.Unmarshal([]byte(str), model); err != nil {
+		return
+	}
+	items := c.model.ConstructItems(model)
+	center := pt(c.CanvasWindowX-c.CanvasWidth/2, c.CanvasWindowY-c.CanvasHeight/2)
+	shift := calcItemsShift(center, items)
+	for it := range items {
+		it.Shift(shift.X, shift.Y)
+		c.model.selectItem(it)
+	}
+	return
+}
+
+func (c *Ctrl) clipboardCopy() (err error) {
+	model := c.model.ModelItems(c.model.selected)
+	buf, err := json.Marshal(model)
+	if err != nil {
+		return
+	}
+	c.clip.WriteAll(string(buf))
+	return
 }

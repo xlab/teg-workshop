@@ -3,7 +3,7 @@ import QtQuick.Controls 1.1
 import QtQuick.Controls.Styles 1.1
 import QtQuick.Layouts 1.1
 import QtQuick.Dialogs 1.1
-import TegView 1.0
+import TegCtrl 1.0
 import 'tegrender.js' as R
 
 ApplicationWindow {
@@ -31,6 +31,8 @@ ApplicationWindow {
             ctrl.modifierKeyControl = false
             ctrl.modifierKeyAlt = false
             view.keyhint = ""
+        } else {
+            ctrl.flush()
         }
     }
 
@@ -121,7 +123,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: ctrl.planeView()
             }
 
             XButton {
@@ -129,7 +131,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                onClicked: ctrl.test()
+                onClicked: savePic.open()
             }
 
             XSeparator{}
@@ -189,9 +191,49 @@ ApplicationWindow {
         }
     }
 
+    function takeScreenshot(name) {
+        var w, h, x, y
+        w = cv.canvasWindow.width
+        h = cv.canvasWindow.height
+        x = cv.canvasWindow.x
+        y = cv.canvasWindow.y
+
+        var scene = ctrl.prepareScene()
+
+        cv.canvasWindow.width = scene.width
+        cv.canvasWindow.height = scene.height
+        cv.canvasWindow.x = scene.x
+        cv.canvasWindow.y = scene.y
+
+        var done = cv.save(name)
+
+        cv.canvasWindow.width = w
+        cv.canvasWindow.height = h
+        cv.canvasWindow.x = x
+        cv.canvasWindow.y = y
+
+        return done
+    }
+
+    FileDialog {
+        id: savePic
+        title: "Choose file to save snapshot"
+        selectExisting: false
+        nameFilters: [ "PNG Images (*.png)", "All files (*)" ]
+        onAccepted: {
+            var ok = takeScreenshot(("" + fileUrl).replace("file://", ""))
+            if(!ok) {
+                ctrl.qmlError("Unable to save snapshot")
+            }
+        }
+        onRejected: {
+            ctrl.qmlError("Snapshot canceled")
+        }
+    }
+
     FileDialog {
         id: openFile
-        title: "Choose file to load"
+        title: "Choose file to load model"
         selectExisting: true
         nameFilters: [ "TEG files (*.teg *.json)", "All files (*)" ]
         onAccepted: {
@@ -205,7 +247,7 @@ ApplicationWindow {
 
     FileDialog {
         id: saveFile
-        title: "Choose file to save"
+        title: "Choose file to save model"
         selectExisting: false
         nameFilters: [ "TEG files (*.teg *.json)", "All files (*)" ]
         onAccepted: {
@@ -449,18 +491,6 @@ ApplicationWindow {
             view.sane = true
             view.errorText = ""
         }
-    }
-
-    Text {
-        id: modeHint
-        font.pointSize: 20
-        font.capitalization: Font.SmallCaps
-        color: "#b4b4b4"
-        text: view.edit ? "Edit mode" : "View mode"
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.rightMargin: 20
-        anchors.topMargin: 15
     }
 
     Item {

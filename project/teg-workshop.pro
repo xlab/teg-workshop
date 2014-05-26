@@ -19,4 +19,7 @@ include(qtquick2applicationviewer/qtquick2applicationviewer.pri)
 qtcAddDeployment()
 
 OTHER_FILES += \
-    qml/grid.png
+    qml/grid.png \
+    qml/planeview.qml \
+    qml/planerender.js \
+    qml/PlaneLayer.qml

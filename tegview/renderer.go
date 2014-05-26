@@ -81,7 +81,7 @@ func newTegBuffer() *TegBuffer {
 		RRects:  list(make([]interface{}, 0, 100)),
 		Bezier:  list(make([]interface{}, 0, 256)),
 		Polys:   list(make([]interface{}, 0, 256)),
-		Texts:   list(make([]interface{}, 0, 1024)),
+		Texts:   list(make([]interface{}, 0, 256)),
 		Lines:   list(make([]interface{}, 0, 256)),
 		Chains:  list(make([]interface{}, 0, 100)),
 	}

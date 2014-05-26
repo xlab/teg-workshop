@@ -6,9 +6,10 @@ import (
 	"os"
 	"path"
 
-	"github.com/xlab/clipboard"
+	"github.com/xlab/teg-workshop/planeview"
 	"github.com/xlab/teg-workshop/workspace"
 	"gopkg.in/qml.v0"
+	"gopkg.in/xlab/clipboard.v1"
 )
 
 const (
@@ -16,14 +17,15 @@ const (
 )
 
 type View struct {
-	id       string
-	model    *teg
-	control  *Ctrl
-	win      *qml.Window
-	renderer *tegRenderer
-	childs   chan workspace.Window
-	closed   chan struct{}
-	stop     chan struct{}
+	id        string
+	model     *teg
+	control   *Ctrl
+	win       *qml.Window
+	renderer  *tegRenderer
+	planeView *planeview.View
+	childs    chan workspace.Window
+	closed    chan struct{}
+	stop      chan struct{}
 }
 
 type actionNewWindow struct{ title string }
@@ -33,13 +35,17 @@ type actionEditGroup struct {
 	model *teg
 	label string
 }
+type actionPlaneView struct {
+	models    []*planeview.Plane
+	id, title string
+}
 
 func NewView() *View {
 	engine := qml.NewEngine()
 	model := newTeg()
 	renderer := newTegRenderer(nil)
 	engine.Context().SetVar("tegRenderer", renderer)
-	qml.RegisterTypes("TegView", 1, 0, []qml.TypeSpec{
+	qml.RegisterTypes("TegCtrl", 1, 0, []qml.TypeSpec{
 		{
 			Init: func(ctrl *Ctrl, obj qml.Object) {
 				ctrl.model = model
@@ -89,17 +95,13 @@ func NewView() *View {
 	return view
 }
 
-type Test struct {
-	Texts []string
-}
-
 func (v *View) setModel(model *teg) {
 	v.id = model.id
 	v.model = model
 	v.control.model = model
 }
 
-func (v *View) setTitle(text string) {
+func (v *View) SetTitle(text string) {
 	if len(text) > 0 {
 		v.control.Title = text
 	} else {
@@ -110,6 +112,12 @@ func (v *View) setTitle(text string) {
 
 func (v *View) FakeModel() {
 	v.model.fakeData()
+}
+
+func (v *View) newWindow(title string) (view *View) {
+	view = NewView()
+	view.SetTitle(title)
+	return
 }
 
 func (v *View) saveModel(path string) (err error) {
@@ -138,17 +146,8 @@ func (v *View) loadModel(path string) (err error) {
 	return
 }
 
-func (v *View) newWindow(title string) (view *View, err error) {
-	view = NewView()
-	view.setTitle(title)
-	return
-}
-
 func (v *View) openFile(name string) (err error) {
-	view, err := v.newWindow(path.Base(name))
-	if err != nil {
-		return
-	}
+	view := v.newWindow(path.Base(name))
 	if err = view.loadModel(name); err != nil {
 		return
 	}
@@ -156,11 +155,8 @@ func (v *View) openFile(name string) (err error) {
 	return
 }
 
-func (v *View) editGroup(model *teg, label string) (err error) {
-	view, err := v.newWindow(label)
-	if err != nil {
-		return
-	}
+func (v *View) editGroup(model *teg, label string) {
+	view := v.newWindow(label)
 	view.setModel(model)
 	view.model.update()
 	v.childs <- view
@@ -169,7 +165,15 @@ func (v *View) editGroup(model *teg, label string) (err error) {
 
 func (v *View) saveFile(name string) (err error) {
 	err = v.saveModel(name)
+	if err != nil {
+		return
+	}
+	v.SetTitle(path.Base(name))
 	return
+}
+
+func (v *View) updatePlaneViewer() {
+
 }
 
 func (v *View) Id() string {
@@ -199,11 +203,8 @@ func (v *View) Show() chan struct{} {
 			case act := <-v.control.actions:
 				switch act.(type) {
 				case actionNewWindow:
-					if win, err := v.newWindow(act.(actionNewWindow).title); err != nil {
-						v.control.Error(err)
-					} else {
-						v.childs <- win
-					}
+					view := v.newWindow(act.(actionNewWindow).title)
+					v.childs <- view
 				case actionOpenFile:
 					if err := v.openFile(act.(actionOpenFile).name); err != nil {
 						v.control.Error(err)
@@ -214,9 +215,14 @@ func (v *View) Show() chan struct{} {
 					}
 				case actionEditGroup:
 					info := act.(actionEditGroup)
-					if err := v.editGroup(info.model, info.label); err != nil {
-						v.control.Error(err)
-					}
+					v.editGroup(info.model, info.label)
+				case actionPlaneView:
+					info := act.(actionPlaneView)
+					view := planeview.NewView(info.id)
+					v.planeView = view
+					view.SetModels(info.models)
+					view.SetTitle(info.title)
+					v.childs <- view
 				}
 			}
 		}
@@ -230,6 +236,14 @@ func (v *View) Show() chan struct{} {
 				qml.Changed(v.renderer, &v.renderer.Screen)
 			case <-v.model.updated:
 				v.renderer.task <- nil
+			case <-v.model.updatedInfo:
+				if v.planeView != nil {
+					infos := make([]*planeview.Plane, 0, len(v.model.infos))
+					for _, p := range v.model.infos {
+						infos = append(infos, p)
+					}
+					v.planeView.SetModels(infos)
+				}
 			}
 		}
 	}()

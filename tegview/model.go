@@ -3,10 +3,12 @@ package tegview
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 
 	"github.com/xlab/teg-workshop/geometry"
+	"github.com/xlab/teg-workshop/planeview"
 	"github.com/xlab/teg-workshop/util"
 )
 
@@ -1027,7 +1029,9 @@ type teg struct {
 	transitions []*transition
 	groups      []*group
 	selected    map[item]bool
+	infos       map[string]*planeview.Plane
 	updated     chan interface{}
+	updatedInfo chan interface{}
 	id          string
 }
 
@@ -1098,6 +1102,7 @@ func (tg *teg) Items() map[item]bool {
 
 func (tg *teg) update() {
 	tg.updated <- nil
+	tg.updateInfos()
 }
 
 func (t *teg) updateParentGroups() {
@@ -1909,14 +1914,53 @@ func (tg *teg) findDrawable(x float64, y float64) (interface{}, bool) {
 	return nil, false
 }
 
+func (tg *teg) updateInfos() {
+	var updated bool
+	for id, info := range tg.infos {
+		it := tg.findById(id)
+		if t, ok := it.(*transition); !ok || t.kind == TransitionInternal {
+			delete(tg.infos, id)
+			updated = true
+		} else if ok {
+			if t.kind == TransitionInput && !info.IsInput() {
+				delete(tg.infos, id)
+				updated = true
+			} else if t.kind == TransitionOutput && info.IsInput() {
+				delete(tg.infos, id)
+				updated = true
+			}
+		}
+	}
+	for i, t := range tg.transitions {
+		if t.kind == TransitionInput {
+			if _, ok := tg.infos[t.id]; !ok {
+				label := t.label
+				if len(label) < 1 {
+					label = fmt.Sprintf("unnamed %d", i)
+				}
+				plane := planeview.NewPlane(t.id, label, true)
+				plane.FakeData()
+				tg.infos[t.id] = plane
+				updated = true
+
+			}
+		}
+	}
+	if updated {
+		tg.updatedInfo <- nil
+	}
+}
+
 func newTeg() *teg {
 	return &teg{
 		util:        &utility{},
+		infos:       make(map[string]*planeview.Plane, 20),
 		places:      make([]*place, 0, 256),
 		transitions: make([]*transition, 0, 256),
 		groups:      make([]*group, 0, 32),
 		selected:    make(map[item]bool, 256),
 		updated:     make(chan interface{}, 100),
+		updatedInfo: make(chan interface{}, 100),
 		id:          util.GenUUID(),
 	}
 }

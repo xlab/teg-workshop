@@ -1,3 +1,6 @@
+var gridGap = 16.0
+var notchHeight = 3.0
+
 function renderBuf(ctx, region, cache, kind) {
     if(!cache[kind] || cache[kind].length < 1) {
         return
@@ -8,21 +11,12 @@ function renderBuf(ctx, region, cache, kind) {
         ctx.lineWidth = it.lineWidth
         ctx.strokeStyle = it.strokeStyle
         ctx.fillStyle = it.fillStyle
-        ctx.translate(0, 0.5)
 
-        if(kind === "rrect") {
-            ctx.roundedRect(it.x, it.y, it.w, it.h, it.r, it.r)
-            draw(ctx, it.stroke, it.fill)
-        } else if(kind === "rect") {
+        if(kind === "rect") {
             ctx.rect(it.x, it.y, it.w, it.h)
             draw(ctx, it.stroke, it.fill)
-        } else if(kind === "circle") {
+        } else if(kind === "circle" || kind === "pad") {
             ctx.ellipse(it.x, it.y, it.d, it.d)
-            draw(ctx, it.stroke, it.fill)
-        } else if(kind === "bezier") {
-            ctx.beginPath()
-            ctx.moveTo(it.start.x, it.start.y)
-            ctx.bezierCurveTo(it.c1.x, it.c1.y, it.c2.x, it.c2.y, it.end.x, it.end.y)
             draw(ctx, it.stroke, it.fill)
         } else if(kind === "poly") {
             if(it.points.length > 2) {
@@ -96,12 +90,120 @@ function render(ctx, region, cache) {
     var rh = region.height
     ctx.clearRect(rx, ry, rw, rh)
 
-    renderBuf(ctx, region, cache, "rrect")
-    renderBuf(ctx, region, cache, "circle")
     renderBuf(ctx, region, cache, "rect")
+    renderBuf(ctx, region, cache, "chain")
+    renderBuf(ctx, region, cache, "pad")
+    renderBuf(ctx, region, cache, "circle")
     renderBuf(ctx, region, cache, "line")
-    renderBuf(ctx, region, cache, "bezier")
     renderBuf(ctx, region, cache, "poly")
     renderBuf(ctx, region, cache, "text")
-    renderBuf(ctx, region, cache, "chain")
+}
+
+function background(ctx, region, zoom, cw, ch, ww, wh, wx, wy) {
+    var rx = region.x
+    var ry = region.y
+    var rw = region.width
+    var rh = region.height
+    ctx.clearRect(rx, ry, rw, rh)
+
+    var gap = gridGap * zoom
+
+    var cx = cw+ww
+    var cy = ch+wh
+
+    var gx = wx + ww*2 - 20
+    var gy = cy - 20
+    var dx = cx + 20
+    var dy = wy + 20
+
+    var kX = Math.floor((cx - rx) / gap)
+    var kY = Math.floor((cy - ry) / gap)
+    var sx = cx - kX * gap
+    var sy = cy - kY * gap
+
+    // grid
+    if(zoom > 0.6) {
+        ctx.strokeStyle = "#bdc3c7"
+        ctx.lineWidth = 1
+        ctx.translate(0.5, 0)
+
+        for(var x = sx; x < sx+rw; x += gap) {
+            ctx.moveTo(x, sy)
+            ctx.lineTo(x, sy+rh)
+        }
+        for(var y = sy; y < sy+rh; y += gap) {
+            ctx.moveTo(sx, y)
+            ctx.lineTo(sx+rw, y)
+        }
+
+        ctx.stroke()
+        ctx.reset()
+        ctx.beginPath()
+    }
+    // end of grid
+
+    // bars
+    ctx.strokeStyle = "#000000"
+    ctx.lineWidth = 1
+    ctx.translate(0.5, 0)
+
+    ctx.moveTo(cx, sy)
+    ctx.lineTo(cx, sy+rh)
+    ctx.moveTo(sx, cy)
+    ctx.lineTo(sx+rw, cy)
+
+    ctx.stroke()
+    ctx.reset()
+    ctx.beginPath()
+    // end of bars
+
+    // notches
+    if(zoom > 0.6) {
+        ctx.strokeStyle = "#000000"
+        ctx.lineWidth = 1
+        ctx.translate(0.5, 0)
+        ctx.font = "14px Times New Roman"
+        ctx.textAlign = "right"
+
+        var offX = -kX
+        for(var x = sx; x < sx+rw; x += gap) {
+            ctx.moveTo(x, cy+notchHeight)
+            ctx.lineTo(x, cy-notchHeight)
+            if(offX !== 0) {
+                if(zoom > 1 || offX%2 == 0) {
+                    ctx.fillText(offX, x+4, cy+notchHeight+12)
+                }
+            }
+            offX++
+        }
+
+        var offY = kY
+        for(var y = sy; y < sy+rh; y += gap) {
+            ctx.moveTo(cx+notchHeight, y)
+            ctx.lineTo(cx-notchHeight, y)
+            if(offY !== 0) {
+                if(zoom > 1 || offY%2 == 0) {
+                    ctx.fillText(offY, cx-notchHeight-3, y+4)
+                }
+            }
+            offY--
+        }
+
+        ctx.stroke()
+        ctx.reset()
+        ctx.beginPath()
+    }
+    // end of notches
+
+    // labels
+    ctx.fillStyle = "#000000"
+    ctx.translate(0.5, 0)
+    ctx.font = "20px Times New Roman"
+
+    ctx.fillText("ɣ", gx, gy)
+    ctx.fillText("δ", dx, dy)
+
+    ctx.reset()
+    ctx.beginPath()
+    // end of lables
 }

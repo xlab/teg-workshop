@@ -6,6 +6,7 @@ import (
 	"log"
 )
 
+// http://www.ashishbanerjee.com/home/go/go-generate-uuid
 func GenUUID() string {
 	uuid := make([]byte, 16)
 	n, err := rand.Read(uuid)

@@ -1,4 +1,4 @@
-package maxplus
+package dioid
 
 import "fmt"
 
