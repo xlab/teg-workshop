@@ -1933,7 +1933,15 @@ func (tg *teg) updateInfos() {
 	}
 	for i, t := range tg.transitions {
 		if t.kind == TransitionInput {
-			if _, ok := tg.infos[t.id]; !ok {
+			if info, ok := tg.infos[t.id]; ok {
+				if len(t.label) < 1 {
+					info.SetLabel(fmt.Sprintf("unnamed %d", i))
+					updated = true
+				} else if info.Label() != t.label {
+					info.SetLabel(t.label)
+					updated = true
+				}
+			} else {
 				label := t.label
 				if len(label) < 1 {
 					label = fmt.Sprintf("unnamed %d", i)
@@ -1942,7 +1950,6 @@ func (tg *teg) updateInfos() {
 				plane.FakeData()
 				tg.infos[t.id] = plane
 				updated = true
-
 			}
 		}
 	}

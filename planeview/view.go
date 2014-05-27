@@ -29,6 +29,7 @@ func NewView(id string) *View {
 		{
 			Init: func(ctrl *Ctrl, obj qml.Object) {
 				ctrl.Layers = &Layers{}
+				ctrl.enabled = make(map[string]bool)
 				ctrl.events = make(chan interface{}, 100)
 				ctrl.actions = make(chan interface{}, 100)
 				ctrl.errors = make(chan error, 100)
@@ -58,8 +59,7 @@ func NewView(id string) *View {
 		view.control.stopHandling()
 		close(view.stop)
 		view.control.models = nil
-		view.control.Layers = nil
-		view.control.active = nil
+		view.control.Layers = &Layers{}
 		close(view.childs)
 		close(view.closed)
 	})
@@ -74,10 +74,17 @@ func (v *View) SetModels(models []*Plane) {
 	}
 	if len(models) > 0 {
 		v.control.models = models
-		v.control.active = models[0]
+		for i, m := range models {
+			if m.ioId == v.control.Layers.active {
+				v.control.ActiveLayer = i
+				break
+			}
+		}
 	} else {
 		v.control.models = nil
-		v.control.Layers = nil
+		v.control.Layers = &Layers{}
+		qml.Changed(v.control, &v.control.Layers)
+		qml.Changed(v.control, &v.control.Updated)
 		return
 	}
 	renderers := make([]*planeRenderer, 0, len(models))
@@ -86,9 +93,11 @@ func (v *View) SetModels(models []*Plane) {
 	}
 	layers := &Layers{
 		renderers: renderers, Length: len(renderers),
+		active: v.control.Layers.active,
 	}
 	v.control.Layers = layers
 	qml.Changed(v.control, &v.control.Layers)
+	qml.Changed(v.control, &v.control.Updated)
 	for i := range models {
 		v.updated <- i
 	}
@@ -133,6 +142,9 @@ func (v *View) Show() chan struct{} {
 			case <-v.stop:
 				return
 			case id := <-v.updated:
+				if id >= len(v.control.models) {
+					continue
+				}
 				m := v.control.models[id]
 				v.control.Layers.renderers[id].process(m)
 				qml.Changed(v.control, &v.control.Layers)
@@ -148,19 +160,14 @@ func (v *View) Show() chan struct{} {
 }
 
 type Layers struct {
-	enabled   map[string]bool
+	active    string
 	renderers []*planeRenderer
 	Length    int
 }
 
 func (l *Layers) At(i int) *PlaneBuffer {
-	return l.renderers[i].Screen
-}
-
-func (l *Layers) SetEnabled(id string, enabled bool) {
-	l.enabled[id] = enabled
-}
-
-func (l *Layers) IsEnabled(id string) bool {
-	return l.enabled[id]
+	if i < len(l.renderers) {
+		return l.renderers[i].Screen
+	}
+	return newPlaneBuffer()
 }

@@ -6,9 +6,13 @@
 #include "lib/vars.h"
 
 #include "bridge.h"
+#include <stdlib.h>
+#include <stdio.h>
 
 gd_ *newGd(int g, int d) {
-	return new gd;
+	gd* m = new gd;
+	m->init(g, d);
+	return m;
 }
 
 poly_ *newPoly() {

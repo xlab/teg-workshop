@@ -12,7 +12,7 @@ var group = workspace.NewGroup()
 
 func main() {
 	qml.Init(nil)
-	runtime.GOMAXPROCS(2)
+	runtime.GOMAXPROCS(4)
 	root := tegview.NewView()
 	root.FakeModel()
 	group.AddWindow(root)

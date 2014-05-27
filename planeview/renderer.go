@@ -70,6 +70,7 @@ type planeRenderer struct {
 	Screen *PlaneBuffer
 	Ready  bool
 
+	drawShadows   bool
 	zoom          float64
 	canvasWidth   float64
 	canvasHeight  float64
@@ -91,6 +92,7 @@ func newPlaneRenderer(ctrl *Ctrl) *planeRenderer {
 }
 
 func (pr *planeRenderer) fixViewport() {
+	pr.drawShadows = pr.ctrl.DrawShadows
 	pr.zoom = pr.ctrl.Zoom
 
 	pr.canvasWidth = pr.ctrl.CanvasWidth
@@ -109,10 +111,6 @@ func (pr *planeRenderer) process(p *Plane) {
 }
 
 func (pr *planeRenderer) renderModel(p *Plane) {
-	for _, v := range p.temporary {
-		pr.renderVertex(v, ColorDefault)
-	}
-
 	points := make([]*geometry.Point, 0, len(p.defined)+len(p.generated))
 
 	for _, v := range p.defined {
@@ -126,6 +124,11 @@ func (pr *planeRenderer) renderModel(p *Plane) {
 
 	if len(points) > 0 {
 		pr.renderChain(points, p.color)
+	}
+
+	for _, v := range p.temporary {
+		pr.renderVertex(v, ColorDefault)
+		pr.renderChain([]*geometry.Point{pt(v.X, v.Y)}, ColorDefault)
 	}
 
 	if p.util.kind != UtilNone {
@@ -149,17 +152,19 @@ func (pr *planeRenderer) renderChain(points []*geometry.Point, color string) {
 	}
 	pts = append(pts, rpt(max.X, lastY))
 
-	for i := 0; i < len(pts)-1; i++ {
-		bg := &render.Rect{
-			Style: &render.Style{
-				Fill:      true,
-				FillStyle: util.AlphaHex(color, 60),
-			},
-			X: pts[i].X, Y: pts[i].Y,
-			W: pts[i+1].X - pts[i].X,
-			H: max.Y - pts[i].Y,
+	if pr.drawShadows {
+		for i := 0; i < len(pts)-1; i++ {
+			bg := &render.Rect{
+				Style: &render.Style{
+					Fill:      true,
+					FillStyle: util.AlphaHex(color, 60),
+				},
+				X: pts[i].X, Y: pts[i].Y,
+				W: pts[i+1].X - pts[i].X,
+				H: max.Y - pts[i].Y,
+			}
+			pr.buf.Rects.Put(bg)
 		}
-		pr.buf.Rects.Put(bg)
 	}
 
 	chain := render.NewChain(pts...)
