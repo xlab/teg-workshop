@@ -24,6 +24,14 @@ const (
 	GridDefaultGap     = 16.0
 )
 
+var (
+	PlaneColors = []string{
+		"#d35400", "#2980b9", "#27ae60",
+		"#2c3e50", "#16a085", "#e67e22",
+		"#f1c40f", "#2ecc71", "#9b59b6",
+	}
+)
+
 const (
 	TransitionInternal = iota
 	TransitionInput
@@ -243,18 +251,21 @@ func (t *transition) Model() *Transition {
 	return model
 }
 
-func (g *group) Model() *Group {
+func (g *group) Model(copy bool) *Group {
 	model := &Group{
 		Id: g.id,
 		X:  g.X(), Y: g.Y(),
 
 		Label:  g.label,
 		Folded: g.folded,
-		Model:  g.model.Model(),
+		Model:  g.model.Model(copy),
 
 		Inputs:  make([]*Transition, len(g.inputs)),
 		Outputs: make([]*Transition, len(g.outputs)),
 		Iostate: make(map[string]string, len(g.inputs)+len(g.outputs)),
+	}
+	if copy {
+		model.Id = util.GenUUID()
 	}
 	for i, t := range g.inputs {
 		model.Inputs[i] = t.Model()
@@ -268,13 +279,16 @@ func (g *group) Model() *Group {
 	return model
 }
 
-func (tg *teg) Model() *Teg {
+func (tg *teg) Model(copy bool) *Teg {
 	model := &Teg{
 		Id: tg.id,
 
 		Places:      make([]*Place, 0, len(tg.places)),
 		Transitions: make([]*Transition, len(tg.transitions)),
 		Groups:      make([]*Group, len(tg.groups)),
+	}
+	if copy {
+		model.Id = util.GenUUID()
 	}
 	ignore := make(map[*place]bool, len(tg.places))
 	for i, t := range tg.transitions {
@@ -292,7 +306,7 @@ func (tg *teg) Model() *Teg {
 		}
 	}
 	for i, g := range tg.groups {
-		model.Groups[i] = g.Model()
+		model.Groups[i] = g.Model(copy)
 	}
 	return model
 }
@@ -308,7 +322,7 @@ func (tg *teg) ModelItems(items map[item]bool) *Teg {
 			sub.groups = append(sub.groups, g)
 		}
 	}
-	return sub.Model()
+	return sub.Model(true)
 }
 
 func (tg *teg) ConstructItems(model *Teg) (items map[item]bool) {
@@ -329,10 +343,10 @@ func (t *transition) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.Model())
 }
 func (g *group) MarshalJSON() ([]byte, error) {
-	return json.Marshal(g.Model())
+	return json.Marshal(g.Model(false))
 }
 func (tg *teg) MarshalJSON() ([]byte, error) {
-	return json.Marshal(tg.Model())
+	return json.Marshal(tg.Model(false))
 }
 
 func constructTransition(model *Transition) *transition {
@@ -934,7 +948,6 @@ func (t *transition) resetProperties() {
 
 func (g *group) resetProperties() {
 	g.label = ""
-	g.folded = false
 	for _, t := range g.inputs {
 		if t.horizontal {
 			t.rotate()
@@ -950,8 +963,6 @@ func (g *group) resetProperties() {
 }
 
 func (p *place) resetProperties() {
-	p.counter = 0
-	p.timer = 0
 	p.label = ""
 	if p.in != nil {
 		p.resetControlPoint(true)
@@ -1335,9 +1346,16 @@ func (tg *teg) addGroup(items map[item]bool) *group {
 	shift := calcItemsShift(pt(0, 0), items)
 	for it := range items {
 		it.Shift(shift.X, shift.Y)
+		it.Align()
 	}
 	tg.groups = append(tg.groups, group)
 	return group
+}
+
+type linkPair struct {
+	t  *transition
+	p  *place
+	in bool
 }
 
 func (tg *teg) flatGroup(g *group) map[item]bool {
@@ -1349,28 +1367,43 @@ func (tg *teg) flatGroup(g *group) map[item]bool {
 			t.kind = TransitionInternal
 		}
 	}
+	toClean := make(map[*transition]bool)
+	toLink := make([]linkPair, 0, 32)
 	for _, t := range g.inputs {
 		if t.proxy != nil {
 			for _, p := range t.in {
 				p.out = nil
 				p.outControl = nil
-				oldT := clones[t.proxy].(*transition)
-				oldT.in = make([]*place, 0, 8)
-				oldT.link(p, true)
+				inner := clones[t.proxy].(*transition)
+				toClean[inner] = true
+				toLink = append(toLink, linkPair{t: inner, p: p, in: true})
 			}
+			t.in = nil
 		}
 	}
 	for _, t := range g.outputs {
 		if t.proxy != nil {
 			for _, p := range t.out {
 				p.in = nil
-				p.outControl = nil
-				oldT := clones[t.proxy].(*transition)
-				oldT.out = make([]*place, 0, 8)
-				oldT.link(p, false)
+				p.inControl = nil
+				inner := clones[t.proxy].(*transition)
+				toClean[inner] = false
+				toLink = append(toLink, linkPair{t: inner, p: p, in: false})
 			}
+			t.out = nil
 		}
 	}
+	for t, inbound := range toClean {
+		if inbound {
+			t.in = make([]*place, 0, 8)
+		} else {
+			t.out = make([]*place, 0, 8)
+		}
+	}
+	for _, pair := range toLink {
+		pair.t.link(pair.p, pair.in)
+	}
+
 	shift := calcItemsShift(g.Center(), items)
 	for it := range items {
 		it.Shift(shift.X, shift.Y)
@@ -1463,9 +1496,11 @@ func (tg *teg) removeTransition(t *transition) {
 	}
 	for _, p := range t.in {
 		p.out = nil
+		p.outControl = nil
 	}
 	for _, p := range t.out {
 		p.in = nil
+		p.inControl = nil
 	}
 	for i, t2 := range tg.transitions {
 		if t2 == t {
@@ -1476,6 +1511,18 @@ func (tg *teg) removeTransition(t *transition) {
 }
 
 func (tg *teg) removeGroup(g *group) {
+	for _, t := range g.inputs {
+		for _, p := range t.in {
+			p.out = nil
+			p.outControl = nil
+		}
+	}
+	for _, t := range g.outputs {
+		for _, p := range t.out {
+			p.in = nil
+			p.inControl = nil
+		}
+	}
 	g.inputs = nil
 	g.outputs = nil
 	g.model = nil
@@ -1931,23 +1978,27 @@ func (tg *teg) updateInfos() {
 			}
 		}
 	}
-	for i, t := range tg.transitions {
+	var k int
+	for _, t := range tg.transitions {
 		if t.kind == TransitionInput {
+			k++
 			if info, ok := tg.infos[t.id]; ok {
+				label := t.label
 				if len(t.label) < 1 {
-					info.SetLabel(fmt.Sprintf("unnamed %d", i))
-					updated = true
-				} else if info.Label() != t.label {
-					info.SetLabel(t.label)
+					label = fmt.Sprintf("unnamed %d", k)
+				}
+				if info.Label() != label {
+					info.SetLabel(label)
 					updated = true
 				}
 			} else {
 				label := t.label
 				if len(label) < 1 {
-					label = fmt.Sprintf("unnamed %d", i)
+					label = fmt.Sprintf("unnamed %d", k)
 				}
 				plane := planeview.NewPlane(t.id, label, true)
 				plane.FakeData()
+				plane.SetColor(PlaneColors[len(tg.infos)%9])
 				tg.infos[t.id] = plane
 				updated = true
 			}

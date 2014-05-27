@@ -1,3 +1,12 @@
+function limit(x) {
+    if(x > 5.0) {
+        x = 5.0
+    } else if (x < 0.3) {
+        x = 0.3
+    }
+    return x
+}
+
 function renderBuf(ctx, region, cache, kind) {
     if(!cache[kind] || cache[kind].length < 1) {
         return

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"sync"
 
 	"github.com/xlab/teg-workshop/planeview"
 	"github.com/xlab/teg-workshop/workspace"
@@ -80,18 +81,21 @@ func NewView() *View {
 		id:       model.id,
 	}
 
-	win.On("closing", func() {
+	var once sync.Once
+	quitcode := func() {
 		view.control.stopHandling()
 		view.model.deselectAll()
 		view.model.updateParentGroups()
 		close(view.stop)
-		view.model = nil
-		view.control.model = nil
-		view.control = nil
 		close(view.childs)
 		close(view.closed)
-	})
-
+		win.Destroy()
+	}
+	quit := func() {
+		once.Do(quitcode)
+	}
+	win.On("closing", quit)
+	engine.On("quit", quit)
 	return view
 }
 

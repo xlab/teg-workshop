@@ -2,7 +2,9 @@ package planeview
 
 import (
 	"fmt"
+	"image"
 	"log"
+	"sync"
 
 	"github.com/xlab/teg-workshop/workspace"
 	"gopkg.in/qml.v0"
@@ -10,6 +12,10 @@ import (
 
 const (
 	Title = "I/O of %s"
+)
+
+var (
+	EmptyImage = image.NewRGBA(image.Rect(0, 0, 10, 10))
 )
 
 type View struct {
@@ -21,6 +27,7 @@ type View struct {
 	stop    chan struct{}
 	updated chan int
 	updates chan interface{}
+	visible bool
 }
 
 func NewView(id string) *View {
@@ -29,6 +36,7 @@ func NewView(id string) *View {
 		{
 			Init: func(ctrl *Ctrl, obj qml.Object) {
 				ctrl.Layers = &Layers{}
+				ctrl.ActiveLayer = -1
 				ctrl.enabled = make(map[string]bool)
 				ctrl.events = make(chan interface{}, 100)
 				ctrl.actions = make(chan interface{}, 100)
@@ -55,14 +63,20 @@ func NewView(id string) *View {
 		control: control,
 	}
 
-	win.On("closing", func() {
+	var once sync.Once
+	quitcode := func() {
+		view.visible = false
 		view.control.stopHandling()
 		close(view.stop)
-		view.control.models = nil
-		view.control.Layers = &Layers{}
 		close(view.childs)
 		close(view.closed)
-	})
+		win.Destroy()
+	}
+	quit := func() {
+		once.Do(quitcode)
+	}
+	win.On("closing", quit)
+	engine.On("quit", quit)
 
 	return view
 }
@@ -83,6 +97,7 @@ func (v *View) SetModels(models []*Plane) {
 	} else {
 		v.control.models = nil
 		v.control.Layers = &Layers{}
+		v.control.ActiveLayer = -1
 		qml.Changed(v.control, &v.control.Layers)
 		qml.Changed(v.control, &v.control.Updated)
 		return
@@ -98,8 +113,10 @@ func (v *View) SetModels(models []*Plane) {
 	v.control.Layers = layers
 	qml.Changed(v.control, &v.control.Layers)
 	qml.Changed(v.control, &v.control.Updated)
-	for i := range models {
-		v.updated <- i
+	if v.visible {
+		for i := range models {
+			v.updated <- i
+		}
 	}
 }
 
@@ -153,6 +170,7 @@ func (v *View) Show() chan struct{} {
 		}
 	}()
 
+	v.visible = true
 	v.control.handleEvents()
 	v.win.Show()
 

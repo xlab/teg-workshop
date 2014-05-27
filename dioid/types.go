@@ -2,9 +2,11 @@
 package dioid
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -127,13 +129,28 @@ func (s Serie) String() (str string) {
 	}
 	if len(s.Q) > 1 {
 		str += "(" + s.Q.String() + ")"
-	} else {
+	} else if !s.Q.IsE() {
 		str += s.Q.String()
 	}
-	if !s.R.IsE() {
+	if !s.R.IsE() && !s.Q.IsE() {
 		str += "x(" + s.R.String() + ")*"
+	} else if !s.R.IsE() {
+		str += "(" + s.R.String() + ")*"
 	}
 	return
+}
+
+func Latex(expr string) string {
+	expr = strings.Replace(expr, "x", "", -1)
+	expr = strings.Replace(expr, "+", "\\oplus", -1)
+	expr = strings.Replace(expr, "*", "^{\\ast}", -1)
+	expr = strings.Replace(expr, "eps", "\\varepsilon", -1)
+	expr = strings.Replace(expr, "e", "e", -1)
+	expr = strings.Replace(expr, "g", "\\gamma", -1)
+	expr = strings.Replace(expr, "d", "\\delta", -1)
+	rxPow := regexp.MustCompile(`\^(-?\d+)`)
+	expr = rxPow.ReplaceAllString(expr, "^{${1}}")
+	return base64.StdEncoding.EncodeToString([]byte(expr))
 }
 
 // utilitary

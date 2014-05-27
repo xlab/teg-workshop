@@ -1,6 +1,15 @@
 var gridGap = 16.0
 var notchHeight = 3.0
 
+function limit(x) {
+    if(x > 3.0) {
+        x = 3.0
+    } else if (x < 0.6) {
+        x = 0.6
+    }
+    return x
+}
+
 function renderBuf(ctx, region, cache, kind) {
     if(!cache[kind] || cache[kind].length < 1) {
         return
@@ -112,8 +121,9 @@ function background(ctx, region, zoom, cw, ch, ww, wh, wx, wy) {
     var cy = ch+wh
 
     var gx = wx + ww*2 - 20
-    var gy = cy - 20
-    var dx = cx + 20
+    var gy = cy + 40
+
+    var dx = cx - 40
     var dy = wy + 20
 
     var kX = Math.floor((cx - rx) / gap)
@@ -200,8 +210,8 @@ function background(ctx, region, zoom, cw, ch, ww, wh, wx, wy) {
     ctx.translate(0.5, 0)
     ctx.font = "20px Times New Roman"
 
-    ctx.fillText("ɣ", gx, gy)
-    ctx.fillText("δ", dx, dy)
+    ctx.fillText("g", gx, gy)
+    ctx.fillText("d", dx, dy)
 
     ctx.reset()
     ctx.beginPath()

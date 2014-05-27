@@ -12,6 +12,8 @@ ApplicationWindow {
     height: 600
     color: "#ecf0f1"
 
+    property real zoom: 1.0
+    property bool help: false
     property bool sane: true
     property string errorText
     property string label: ctrl.title
@@ -90,7 +92,7 @@ ApplicationWindow {
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
                 onClicked: {
-                    pinchArea.zoom = pinchArea.limit(pinchArea.zoom + 0.2)
+                    view.zoom = R.limit(view.zoom + 0.2)
                 }
             }
 
@@ -100,7 +102,7 @@ ApplicationWindow {
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
                 onClicked: {
-                    pinchArea.zoom = pinchArea.limit(pinchArea.zoom - 0.2)
+                    view.zoom = R.limit(view.zoom - 0.2)
                 }
             }
 
@@ -112,7 +114,7 @@ ApplicationWindow {
                 onClicked: {
                     cv.canvasWindow.x = cv.canvasSize.width / 2
                     cv.canvasWindow.y = cv.canvasSize.height / 2
-                    pinchArea.zoom = 1.0
+                    view.zoom = 1.0
                 }
             }
 
@@ -151,7 +153,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: view.help = !view.help
             }
 
             XButton {
@@ -160,7 +162,7 @@ ApplicationWindow {
                 original: true
                 bgColor: panelBtnBgColor
                 bgPressedColor: panelBtnBgPressedColor
-                //onClicked:
+                onClicked: about.open()
             }
         }
     }
@@ -188,6 +190,18 @@ ApplicationWindow {
                 visible: view.lock
                 text: "View only"
             }
+        }
+    }
+
+    MessageDialog {
+        id: about
+        icon: StandardIcon.Information
+        title: "About"
+        text: "TEG-WORKSHOP\nA Software for Discrete-Event Systems Modeling with Timed Petri Nets"
+        informativeText: "Made with Go-lang and QtQuick.\nCopyright (c) Maxim Kouprianov,\nMoscow, 2014"
+
+        onAccepted: {
+            about.close()
         }
     }
 
@@ -259,6 +273,79 @@ ApplicationWindow {
         }
     }
 
+    Component {
+        id: keyHint
+        Row {
+            spacing: 10
+            Text {
+                color: "white"
+                font.pixelSize: 14
+                font.bold: true
+                text: model.key + ":"
+            }
+            Text {
+                color: "white"
+                font.pixelSize: 14
+                text: model.hint
+            }
+        }
+    }
+    Rectangle {
+        visible: view.help
+        anchors.fill: parent
+        color: "#D0000000"
+        z: 10
+        RowLayout {
+            spacing: 0
+            anchors.centerIn: parent
+            ColumnLayout {
+                spacing: 10
+                Repeater {
+                    model: ListModel {
+                        ListElement {key: "Type text"; hint: "Edit labels of selected items"}
+                        ListElement {key: "Ctrl+J"; hint: "Increase counters of selected places"}
+                        ListElement {key: "Ctrl+N"; hint: "Decrease counters of selected places"}
+                        ListElement {key: "Ctrl+K"; hint: "Increase timers of selected places"}
+                        ListElement {key: "Ctrl+M"; hint: "Decrease timers of selected places"}
+                        ListElement {key: "Ctrl+G"; hint: "Group selected items or flatten group"}
+                        ListElement {key: "Ctrl+O"; hint: "Open group's model in new window"}
+                        ListElement {key: "Ctrl+Z"; hint: "Fold/unfold a group"}
+                        ListElement {key: "Ctrl+L"; hint: "Toggle view only mode"}
+                        ListElement {key: "Ctrl+W"; hint: "Close window"}
+                    }
+                    delegate: keyHint
+                }
+            }
+
+            XSeparator {
+                Layout.fillHeight: true
+                implicitWidth: 50
+                space: 1
+                color: "white"
+            }
+
+            ColumnLayout {
+                spacing: 10
+                Repeater {
+                    model: ListModel {
+                        ListElement {key: "Double-click"; hint: "Rotate transition"}
+                        ListElement {key: "Ctrl + Click"; hint: "Append an item to selected"}
+                        ListElement {key: "Shift + Click void"; hint: "Add place"}
+                        ListElement {key: "Ctrl + Shift + Click void"; hint: "Add transition"}
+                        ListElement {key: "Ctrl + Backspace"; hint: "Remove selected"}
+                        ListElement {key: "Ctrl + F"; hint: "Reset item's adjustments"}
+                        ListElement {key: "Alt"; hint: "Display links"}
+                        ListElement {key: "Alt + Stroke void"; hint: "Cut links"}
+                        ListElement {key: "Alt + Stroke items"; hint: "Link items"}
+                        ListElement {key: "Alt + Stroke items (same type)"; hint: "Add a mediator and link"}
+
+                    }
+                    delegate: keyHint
+                }
+            }
+        }
+    }
+
     Canvas {
         id: cv
         anchors.fill: parent
@@ -299,9 +386,12 @@ ApplicationWindow {
         id: pinchArea
         anchors.fill: parent
         z: 10
-        property real zoom: 1.0
+        property real zoom: view.zoom
         property real initialZoom
-        onZoomChanged: ctrl.flush()
+        onZoomChanged: {
+            ctrl.zoom = pinchArea.zoom
+            ctrl.flush()
+        }
 
         Behavior on zoom {
             PropertyAnimation {
@@ -309,23 +399,14 @@ ApplicationWindow {
             }
         }
 
-        function limit(x) {
-            if(x > 10.0) {
-                x = 10.0
-            } else if (x < 0.2) {
-                x = 0.2
-            }
-            return x
-        }
-
         onPinchStarted: {
-            initialZoom = zoom
+            initialZoom = view.zoom
         }
 
         onPinchUpdated: {
             //   cv.canvasWindow.x += 4.0*(pinch.previousCenter.x - pinch.center.x)/pinchArea.zoom
             //   cv.canvasWindow.y += 4.0*(pinch.previousCenter.y - pinch.center.y)/pinchArea.zoom
-            zoom = limit(initialZoom * pinch.scale)
+            view.zoom = R.limit(initialZoom * pinch.scale)
         }
     }
 
@@ -351,6 +432,8 @@ ApplicationWindow {
 
             if(ctrl.modifierKeyControl && event.key === Qt.Key_L) {
                 tglLock.enabled = !tglLock.enabled
+            } else if(ctrl.modifierKeyControl && event.key === Qt.Key_W) {
+                Qt.quit()
             } else {
                 ctrl.keyPressed(event.key, event.text)
             }
@@ -469,7 +552,7 @@ ApplicationWindow {
         canvasWindowY: cv.canvasWindow.y
         canvasWindowHeight: cv.canvasWindow.height
         canvasWindowWidth: cv.canvasWindow.width
-        zoom: pinchArea.zoom
+        zoom: 1.0
 
         onErrorTextChanged: {
             if(errorText.length > 0) {

@@ -139,7 +139,7 @@ func (p *Plane) newV(g, d int) *vertex {
 
 func (p *Plane) FakeData() {
 	p.addV(p.newV(3, 2), p.newV(4, 4), p.newV(5, 5))
-	p.MergeTemporary()
+	p.mergeTemporary()
 }
 
 func (p *Plane) deselectAll() {
@@ -182,7 +182,16 @@ func (p *Plane) SetLabel(label string) {
 	p.ioLabel = label
 }
 
-func (p *Plane) MergeTemporary() {
+func (p *Plane) star(set ...*vertex) {
+	var poly dioid.Poly
+	for _, v := range set {
+		p.dioid = p.dioid.RemoveGd(v.G(), v.D())
+		poly = append(poly, dioid.Gd{G: v.G(), D: v.D()})
+	}
+	p.SetDioid(dioid.SerieOplus(p.dioid, dioid.PolyStar(poly)))
+}
+
+func (p *Plane) mergeTemporary() {
 	var poly dioid.Poly
 	for _, v := range p.temporary {
 		poly = append(poly, dioid.Gd{G: v.G(), D: v.D()})
@@ -225,13 +234,17 @@ func (p *Plane) SetDioid(serie dioid.Serie) {
 	}
 }
 
+func (p *Plane) SetColor(color string) {
+	p.color = color
+}
+
 func NewPlane(ioId, ioLabel string, input bool) *Plane {
 	return &Plane{
 		ioId:      ioId,
 		ioLabel:   ioLabel,
 		input:     input,
 		util:      &utility{},
-		color:     "#b10000",
+		color:     ColorDefault,
 		dioid:     dioid.Serie{},
 		defined:   make([]*vertex, 0, 64),
 		temporary: make([]*vertex, 0, 16),

@@ -14,7 +14,7 @@ var (
 type Group struct {
 	sync.WaitGroup
 	ids   idMap
-	count uint32
+	count int32
 }
 
 func NewGroup() *Group {
@@ -48,14 +48,14 @@ func (i *idMap) remove(id string) {
 }
 
 func (g *Group) AddWindow(w Window) (err error) {
-	if atomic.LoadUint32(&g.count) >= 10 {
+	if atomic.LoadInt32(&g.count) >= 10 {
 		return ErrTooMany
 	}
 	if g.ids.exists(w.Id()) {
 		return ErrNotUnique
 	}
 	g.ids.add(w.Id())
-	atomic.AddUint32(&g.count, 1)
+	atomic.AddInt32(&g.count, 1)
 	g.Add(1)
 	go func() {
 		for ch := range w.Childs() {
@@ -67,6 +67,7 @@ func (g *Group) AddWindow(w Window) (err error) {
 	go func() {
 		<-w.Show()
 		g.ids.remove(w.Id())
+		atomic.AddInt32(&g.count, -1)
 		g.Done()
 	}()
 	return

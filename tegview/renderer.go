@@ -801,6 +801,11 @@ func (tr *tegRenderer) renderPlaceValue(x, y, room float64, selected bool, count
 		var rows int
 		var vspace, vmargin float64
 		switch counter {
+		case 2:
+			rows = 1
+			vspace = calcSpacing(room, Thickness, rows)
+			vmargin = calcCenteringMargin(room, Thickness, rows)
+			tr.renderDotRow(x, y+vmargin, room, selected, 2)
 		case 3:
 			rows = 2
 			vspace = calcSpacing(room, Thickness, rows)

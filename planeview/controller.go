@@ -145,7 +145,13 @@ func (c *Ctrl) IsInputAt(i int) (is bool) {
 }
 
 func (c *Ctrl) SetEnabledAt(i int, enabled bool) {
-	c.enabled[c.models[i].ioId] = enabled
+	if c.enabled[c.models[i].ioId] != enabled {
+		c.enabled[c.models[i].ioId] = enabled
+		if enabled {
+			c.SetActive(i)
+		}
+		c.models[i].update()
+	}
 }
 
 func (c *Ctrl) EnabledAt(i int) (enabled bool) {
@@ -163,44 +169,109 @@ func (c *Ctrl) DioidAt(i int) (expr string) {
 }
 
 func (c *Ctrl) Dioid() (expr string) {
-	if len(c.models) > 0 {
-		expr = c.Active().Dioid().String()
+	active := c.Active()
+	if active != nil {
+		expr = active.Dioid().String()
+	}
+	return
+}
+
+func (c *Ctrl) DioidLatex() (expr string) {
+	active := c.Active()
+	if active != nil {
+		expr = dioid.Latex(active.Dioid().String())
 	}
 	return
 }
 
 func (c *Ctrl) SetDioid(expr string) bool {
+	active := c.Active()
+	if active == nil {
+		return false
+	}
 	serie, err := dioid.Eval(expr)
 	if err != nil {
 		c.Error(err)
 		return false
 	}
-	c.Active().SetDioid(serie)
-	c.Active().update()
+	active.SetDioid(serie)
+	active.update()
 	return true
 }
 
 func (c *Ctrl) SetActive(i int) {
-	c.Active().deselectAll()
-	c.Layers.active = c.models[i].ioId
+	active := c.Active()
+	if active != nil {
+		active.deselectAll()
+		active.mergeTemporary()
+		active.update()
+	}
 	c.ActiveLayer = i
+	if i >= 0 && c.enabled[c.models[i].ioId] {
+		c.Layers.active = c.models[i].ioId
+		c.models[i].update()
+	}
 }
 
 func (c *Ctrl) Active() *Plane {
+	if c.ActiveLayer < 0 {
+		return nil
+	}
+	if len(c.models) < 1 {
+		return nil
+	}
 	return c.models[c.ActiveLayer]
 }
 
 func (c *Ctrl) Flush() {
-	if c.Layers.Length < 1 {
-		return
+	for _, m := range c.models {
+		m.update()
 	}
-	c.Active().update()
 }
 
 func (c *Ctrl) Fix() {
-	c.Active().deselectAll()
-	c.Active().MergeTemporary()
-	c.Active().update()
+	active := c.Active()
+	if active == nil {
+		return
+	}
+	active.deselectAll()
+	active.mergeTemporary()
+	active.update()
+}
+
+func (c *Ctrl) Star() {
+	active := c.Active()
+	if active == nil {
+		return
+	}
+	set := make([]*vertex, 0, len(active.selected))
+	for v := range active.selected {
+		set = append(set, v)
+	}
+	active.deselectAll()
+	active.star(set...)
+	active.update()
+}
+
+func (c *Ctrl) HasTemporary() bool {
+	active := c.Active()
+	if active == nil {
+		return false
+	}
+	return len(c.Active().temporary) > 0
+}
+
+func (c *Ctrl) DefinedSelected() bool {
+	active := c.Active()
+	if active == nil {
+		return false
+	}
+	for v := range c.Active().selected {
+		if !v.temp {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Ctrl) stopHandling() {
@@ -228,7 +299,11 @@ func (c *Ctrl) handleEvents() {
 
 				switch ev.kind {
 				case EventMouseHover:
-					v, found := c.Active().findV(x, y)
+					active := c.Active()
+					if active == nil {
+						continue
+					}
+					v, found := active.findV(x, y)
 					var text string
 					if found {
 						text = dioid.Gd{G: v.G(), D: v.D()}.String()
@@ -238,58 +313,66 @@ func (c *Ctrl) handleEvents() {
 						qml.Changed(c, &c.VertexText)
 					}
 				case EventMousePress:
+					active := c.Active()
+					if active == nil {
+						continue
+					}
 					x0, y0 = x, y
-					v, found := c.Active().findV(x, y)
+					v, found := active.findV(x, y)
 
 					if c.ModifierKeyShift && !found {
-						c.Active().deselectAll()
-						v := c.Active().placeV(x, y)
-						c.Active().selectV(v)
+						active.deselectAll()
+						v := active.placeV(x, y)
+						active.selectV(v)
 						focused = v
 					} else if !found {
 						if !c.ModifierKeyControl {
-							c.Active().deselectAll()
-							c.Active().update()
+							active.deselectAll()
+							active.update()
 						}
-						c.Active().util.min = &geometry.Point{x, y}
+						active.util.min = &geometry.Point{x, y}
 					} else {
 						focused = v
 						x0, y0 = v.X, v.Y
-						if len(c.Active().selected) > 1 {
+						if len(active.selected) > 1 {
 							if v.isSelected() && c.ModifierKeyControl {
-								c.Active().deselectV(v)
+								active.deselectV(v)
 							} else if c.ModifierKeyControl {
-								c.Active().selectV(v)
+								active.selectV(v)
 							} else if !v.isSelected() {
-								c.Active().deselectAll()
-								c.Active().selectV(v)
+								active.deselectAll()
+								active.selectV(v)
 							}
 						} else if !c.ModifierKeyControl {
-							c.Active().deselectAll()
-							c.Active().selectV(v)
+							active.deselectAll()
+							active.selectV(v)
 						} else {
-							c.Active().selectV(v)
+							active.selectV(v)
 						}
-						c.Active().update()
+						active.update()
 					}
 				case EventMouseMove:
+					active := c.Active()
+					if active == nil {
+						continue
+					}
 					dx, dy := x-x0, y-y0
 					x0, y0 = x, y
 
 					if focused != nil {
-						c.Active().util.kind = UtilNone
-						c.Active().util.max = nil
-						//c.Active().placeV(x, y)
-						for v := range c.Active().selected {
+						active.util.kind = UtilNone
+						active.util.max = nil
+						//active.placeV(x, y)
+						for v := range active.selected {
 							v.shift(dx, dy)
 						}
 
-						c.Active().update()
+						active.update()
 					} else {
-						c.Active().util.kind = UtilRect
-						c.Active().util.max = &geometry.Point{x, y}
-						dx := c.Active().util.max.X - c.Active().util.min.X
-						dy := c.Active().util.max.Y - c.Active().util.min.Y
+						active.util.kind = UtilRect
+						active.util.max = &geometry.Point{x, y}
+						dx := active.util.max.X - active.util.min.X
+						dy := active.util.max.Y - active.util.min.Y
 						var rect *geometry.Rect
 						if dx == 0 || dy == 0 {
 							continue
@@ -297,53 +380,57 @@ func (c *Ctrl) handleEvents() {
 						w, h := math.Abs(dx), math.Abs(dy)
 						if dx < 0 && dy < 0 {
 							rect = geometry.NewRect(
-								c.Active().util.max.X,
-								c.Active().util.max.Y,
+								active.util.max.X,
+								active.util.max.Y,
 								w, h,
 							)
 						} else if dx < 0 /* && dy > 0 */ {
 							rect = geometry.NewRect(
-								c.Active().util.max.X,
-								c.Active().util.max.Y-h,
+								active.util.max.X,
+								active.util.max.Y-h,
 								w, h,
 							)
 						} else if dx > 0 && dy < 0 {
 							rect = geometry.NewRect(
-								c.Active().util.max.X-w,
-								c.Active().util.max.Y,
+								active.util.max.X-w,
+								active.util.max.Y,
 								w, h,
 							)
 						} else /* dx > 0 && dy > 0 */ {
 							rect = geometry.NewRect(
-								c.Active().util.min.X,
-								c.Active().util.min.Y,
+								active.util.min.X,
+								active.util.min.Y,
 								w, h,
 							)
 						}
-						for _, v := range c.Active().defined {
+						for _, v := range active.defined {
 							if v.bound().Intersect(rect) {
-								c.Active().selectV(v)
+								active.selectV(v)
 							} else {
-								c.Active().deselectV(v)
+								active.deselectV(v)
 							}
 						}
-						for _, v := range c.Active().temporary {
+						for _, v := range active.temporary {
 							if v.bound().Intersect(rect) {
-								c.Active().selectV(v)
+								active.selectV(v)
 							} else {
-								c.Active().deselectV(v)
+								active.deselectV(v)
 							}
 						}
-						c.Active().update()
+						active.update()
 					}
 
 				case EventMouseRelease:
-					for v := range c.Active().selected {
+					active := c.Active()
+					if active == nil {
+						continue
+					}
+					for v := range active.selected {
 						v.align()
 					}
 					focused = nil
-					c.Active().util.kind = UtilNone
-					c.Active().update()
+					active.util.kind = UtilNone
+					active.update()
 				}
 			default:
 				log.Println("Event not supported")
@@ -354,28 +441,32 @@ func (c *Ctrl) handleEvents() {
 
 func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 	var updated bool
+	active := c.Active()
+	if active == nil {
+		return
+	}
 	// log.Printf("key: %v (%v)", ev.keycode, ev.text)
 	if c.ModifierKeyControl {
 		switch ev.keycode {
 		case KeyCodeA:
-			for _, v := range c.Active().defined {
-				c.Active().selectV(v)
+			for _, v := range active.defined {
+				active.selectV(v)
 			}
-			for _, v := range c.Active().temporary {
-				c.Active().selectV(v)
+			for _, v := range active.temporary {
+				active.selectV(v)
 			}
 		case 16777219, 16777223, 8:
-			for v := range c.Active().selected {
-				c.Active().removeV(v)
+			for v := range active.selected {
+				active.removeV(v)
 				updated = true
 			}
 			if updated {
-				c.Active().SetDioid(c.Active().Dioid())
+				active.SetDioid(active.Dioid())
 			}
 		}
 	}
 
 	if updated {
-		c.Active().update()
+		active.update()
 	}
 }
