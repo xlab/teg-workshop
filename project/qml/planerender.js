@@ -172,7 +172,7 @@ function background(ctx, region, zoom, cw, ch, ww, wh, wx, wy) {
         ctx.strokeStyle = "#000000"
         ctx.lineWidth = 1
         ctx.translate(0.5, 0)
-        ctx.font = "14px Times New Roman"
+        ctx.font = "14px Georgia"
         ctx.textAlign = "right"
 
         var offX = -kX
@@ -208,7 +208,7 @@ function background(ctx, region, zoom, cw, ch, ww, wh, wx, wy) {
     // labels
     ctx.fillStyle = "#000000"
     ctx.translate(0.5, 0)
-    ctx.font = "20px Times New Roman"
+    ctx.font = "20px Georgia"
 
     ctx.fillText("g", gx, gy)
     ctx.fillText("d", dx, dy)

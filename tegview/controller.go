@@ -164,7 +164,7 @@ type ScreenshotScene struct {
 }
 
 func (c *Ctrl) PrepareScene() *ScreenshotScene {
-	margin := 50.0
+	margin := 100.0
 	x0, y0, x1, y1 := detectBounds(c.model.Items())
 	w, h := x1-x0, y1-y0
 	return &ScreenshotScene{

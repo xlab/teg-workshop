@@ -1997,8 +1997,8 @@ func (tg *teg) updateInfos() {
 					label = fmt.Sprintf("unnamed %d", k)
 				}
 				plane := planeview.NewPlane(t.id, label, true)
-				plane.FakeData()
-				plane.SetColor(PlaneColors[len(tg.infos)%9])
+				// plane.FakeData()
+				plane.SetColor(PlaneColors[(k-1)%9])
 				tg.infos[t.id] = plane
 				updated = true
 			}
