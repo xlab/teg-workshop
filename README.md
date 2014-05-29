@@ -1,8 +1,8 @@
 ![demo.png](http://cl.ly/VnE7/demo_groups.png)
-![vertices.png](http://cl.ly/VnR3/add_v.png)
-demo gif #1: http://cl.ly/VCYj/teg-workshop.gif
-demo gif #2: http://cl.ly/VBQX/teg-workshop2.gif
----------
+
+[vertices.png](http://cl.ly/VnR3/add_v.png) [demo gif #1](http://cl.ly/VCYj/teg-workshop.gif) [demo gif #2](http://cl.ly/VBQX/teg-workshop2.gif)
+
+=============
 
 The MIT License (MIT)
 Copyright © 2014 Maxim Kouprianov <maxim@kouprianov.com>
