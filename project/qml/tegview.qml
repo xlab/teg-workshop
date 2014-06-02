@@ -296,7 +296,7 @@ ApplicationWindow {
         color: "#D0000000"
         z: 10
         RowLayout {
-            spacing: 0
+            spacing: 30
             anchors.centerIn: parent
             ColumnLayout {
                 spacing: 10
@@ -317,18 +317,12 @@ ApplicationWindow {
                 }
             }
 
-            XSeparator {
-                Layout.fillHeight: true
-                implicitWidth: 50
-                space: 1
-                color: "white"
-            }
-
             ColumnLayout {
                 spacing: 10
                 Repeater {
                     model: ListModel {
                         ListElement {key: "Double-click"; hint: "Rotate transition"}
+                        ListElement {key: "Ctrl+T"; hint: "Change type of transition"}
                         ListElement {key: "Ctrl + Click"; hint: "Append an item to selected"}
                         ListElement {key: "Shift + Click void"; hint: "Add place"}
                         ListElement {key: "Ctrl + Shift + Click void"; hint: "Add transition"}
@@ -430,7 +424,9 @@ ApplicationWindow {
             ctrl.modifierKeyControl = (event.modifiers & Qt.ControlModifier) ? true : false
             ctrl.modifierKeyAlt = (event.modifiers & Qt.AltModifier) ? true : false
 
-            if(ctrl.modifierKeyControl && event.key === Qt.Key_L) {
+            if(event.key === Qt.Key_F1) {
+                view.help = !view.help
+            } else if(ctrl.modifierKeyControl && event.key === Qt.Key_L) {
                 tglLock.enabled = !tglLock.enabled
             } else if(ctrl.modifierKeyControl && event.key === Qt.Key_W) {
                 Qt.quit()

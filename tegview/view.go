@@ -114,10 +114,6 @@ func (v *View) SetTitle(text string) {
 	qml.Changed(v.control, &v.control.Title)
 }
 
-func (v *View) FakeModel() {
-	v.model.fakeData()
-}
-
 func (v *View) newWindow(title string) (view *View) {
 	view = NewView()
 	view.SetTitle(title)

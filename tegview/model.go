@@ -1535,66 +1535,6 @@ func (tg *teg) removeGroup(g *group) {
 	}
 }
 
-func (tg *teg) fakeData() {
-	p1 := tg.addPlace(-138.863281, -96.941406)
-	p1.timer, p1.counter = 8, 0
-	p2 := tg.addPlace(-138.468750, 2.511719)
-	p2.timer, p2.counter = 3, 0
-	p3 := tg.addPlace(67.714844, -56.714844)
-	p3.timer, p3.counter = 5, 3
-	p4 := tg.addPlace(-61.046875, -56.257812)
-	p4.timer, p4.counter = 3, 4
-	p5 := tg.addPlace(4.554688, 149.593750)
-	p5.timer, p5.counter = 2, 2
-	p5.label = "delayed\ncycle"
-	p6 := tg.addPlace(155.371094, -63.152344)
-	p7 := tg.addPlace(118.007812, 8.843750)
-
-	t1 := tg.addTransition(-265.976562, -46.679688)
-	t1.label = "input sink"
-	t2 := tg.addTransition(6.859375, 29.503906)
-	t2.label = "x1"
-	t3 := tg.addTransition(7.425781, -145.574219)
-	t3.label = "x2"
-	t4 := tg.addTransition(253.656250, -35.816406)
-	t4.label = "output sink"
-
-	t1.link(p1, false)
-	t1.link(p2, false)
-	t2.link(p2, true)
-	t2.link(p3, true)
-	t2.link(p4, false)
-	t2.link(p5, true)
-	t2.link(p5, false)
-	t2.link(p7, false)
-	t3.link(p1, true)
-	t3.link(p3, false)
-	t3.link(p4, true)
-	t3.link(p6, false)
-	t4.link(p6, true)
-	t4.link(p7, true)
-
-	p5.inControl.Move(68.4609375, 106.078125)
-	p5.inControl.modified = true
-	p5.outControl.Move(-55.18359375, 102.73046875)
-	p5.outControl.modified = true
-	p3.inControl.Move(73.6484375, -94.69921875)
-	p3.inControl.modified = true
-	p3.outControl.Move(-21.8046875, -32.6015625)
-	p3.outControl.modified = true
-	p4.inControl.Move(18.88671875, -50.78515625)
-	p4.inControl.modified = true
-	p4.outControl.Move(-57.30078125, -109.2734375)
-	p4.outControl.modified = true
-
-	for _, p := range tg.places {
-		p.Align()
-	}
-	for _, t := range tg.transitions {
-		t.Align()
-	}
-}
-
 func (tg *teg) deselectAll() {
 	for k := range tg.selected {
 		delete(tg.selected, k)

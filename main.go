@@ -14,7 +14,6 @@ func main() {
 	qml.Init(nil)
 	runtime.GOMAXPROCS(4)
 	root := tegview.NewView()
-	root.FakeModel()
 	group.AddWindow(root)
 	group.Wait()
 }
