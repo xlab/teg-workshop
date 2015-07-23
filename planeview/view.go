@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/xlab/teg-workshop/workspace"
-	"gopkg.in/qml.v0"
+	"gopkg.in/qml.v1"
 )
 
 const (

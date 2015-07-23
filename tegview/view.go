@@ -9,8 +9,8 @@ import (
 
 	"github.com/xlab/teg-workshop/planeview"
 	"github.com/xlab/teg-workshop/workspace"
-	"gopkg.in/qml.v0"
-	"gopkg.in/xlab/clipboard.v1"
+	"gopkg.in/qml.v1"
+	"gopkg.in/xlab/clipboard.v2"
 )
 
 const (

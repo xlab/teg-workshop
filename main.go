@@ -5,15 +5,20 @@ import (
 
 	"github.com/xlab/teg-workshop/tegview"
 	"github.com/xlab/teg-workshop/workspace"
-	"gopkg.in/qml.v0"
+	"gopkg.in/qml.v1"
 )
 
 var group = workspace.NewGroup()
 
-func main() {
-	qml.Init(nil)
+func init() {
 	runtime.GOMAXPROCS(4)
-	root := tegview.NewView()
-	group.AddWindow(root)
-	group.Wait()
+}
+
+func main() {
+	qml.Run(func() error {
+		root := tegview.NewView()
+		group.AddWindow(root)
+		group.Wait()
+		return nil
+	})
 }

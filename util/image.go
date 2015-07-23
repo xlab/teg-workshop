@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 
-	"gopkg.in/qml.v0"
+	"gopkg.in/qml.v1"
 )
 
 // Save an image from CanvasImageData

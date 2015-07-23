@@ -7,7 +7,7 @@ import (
 
 	"github.com/xlab/teg-workshop/dioid"
 	"github.com/xlab/teg-workshop/geometry"
-	"gopkg.in/qml.v0"
+	"gopkg.in/qml.v1"
 )
 
 const (
