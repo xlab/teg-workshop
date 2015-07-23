@@ -617,7 +617,11 @@ func (c *Ctrl) handleKeyEvent(ev *keyEvent) {
 					g.resetProperties()
 					updated = true
 				case KeyCodeZ:
-					g.folded = !g.folded
+					if g.folded {
+						c.model.unfoldGroup(g)
+					} else {
+						c.model.foldGroup(g)
+					}
 					updated = true
 				case KeyCodeO:
 					c.actions <- actionEditGroup{g.model, g.label}
